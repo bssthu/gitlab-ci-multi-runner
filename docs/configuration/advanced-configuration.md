@@ -8,11 +8,13 @@ This defines global settings of multi-runner.
 | Setting | Explanation |
 | ------- | ----------- |
 | `concurrent` | limits how many jobs globally can be run concurrently. The most upper limit of jobs using all defined runners |
+| `check_interval` | number of seconds between two checks if the CI has new builds (default to 3 seconds)|
 
 Example:
 
 ```bash
 concurrent = 4
+check_interval = 15
 ```
 
 ### The [[runners]] section
@@ -30,6 +32,8 @@ This defines one runner entry.
 | `builds_dir`        | directory where builds will be stored in context of selected executor (Locally, Docker, SSH) |
 | `environment`       | append or overwrite environment variables |
 | `disable_verbose`   | don't print run commands |
+| `update_interval`   | number of seconds between updates of the ouput of the running build |
+| `max_trace_output_size` | maximum size of the build output (in bytes) |
 
 Example:
 

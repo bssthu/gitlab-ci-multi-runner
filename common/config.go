@@ -52,11 +52,16 @@ type RunnerConfig struct {
 	SSH       *ssh.Config      `toml:"ssh" json:"ssh"`
 	Docker    *DockerConfig    `toml:"docker" json:"docker"`
 	Parallels *ParallelsConfig `toml:"parallels" json:"parallels"`
+
+	UpdateInterval *int     `toml:"update_interval" json:"update_interval"`
+	MaxTraceOutputSize *int `toml:"max_trace_output_size" json:"max_trace_output_size"`
 }
 
 type BaseConfig struct {
 	Concurrent int             `toml:"concurrent" json:"concurrent"`
 	Runners    []*RunnerConfig `toml:"runners" json:"runners"`
+
+	CheckInterval  time.Duration `toml:"check_interval" json:"check_interval"`
 }
 
 type Config struct {
@@ -76,6 +81,7 @@ func NewConfig() *Config {
 	return &Config{
 		BaseConfig: BaseConfig{
 			Concurrent: runtime.NumCPU(),
+			CheckInterval: DefaultCheckInterval,
 		},
 	}
 }

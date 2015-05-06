@@ -1,5 +1,9 @@
 package helpers
 
+import (
+	"strconv"
+)
+
 func IsEmpty(data *string) bool {
 	return data == nil || *data == ""
 }
@@ -26,4 +30,14 @@ func BoolOrDefault(data *bool, def bool) bool {
 	} else {
 		return *data
 	}
+}
+
+func IntFromStringOrDefault(str string, def int) int {
+	if len(str) > 0 {
+		i, err := strconv.Atoi(str)
+		if err == nil {
+			return i
+		}
+	}
+	return def
 }

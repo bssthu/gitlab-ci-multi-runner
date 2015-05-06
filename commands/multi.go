@@ -184,7 +184,7 @@ func (mr *MultiRunner) feedRunners(runners chan *common.RunnerConfig) {
 		for _, runner := range config.Runners {
 			runners <- runner
 		}
-		time.Sleep(common.CheckInterval * time.Second)
+		time.Sleep(config.CheckInterval * time.Second)
 	}
 }
 

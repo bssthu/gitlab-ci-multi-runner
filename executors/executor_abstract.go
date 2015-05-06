@@ -43,8 +43,9 @@ func (e *AbstractExecutor) ReadTrace(pipe *io.PipeReader) {
 			continue
 		}
 
-		if e.Build.BuildLogLen() > common.MaxTraceOutputSize {
-			output := fmt.Sprintf("\nBuild log exceed limit of %v bytes.", common.MaxTraceOutputSize)
+		maxTraceOutputSize := helpers.NonZeroOrDefault(e.Config.MaxTraceOutputSize, common.DefaultMaxTraceOutputSize)
+		if e.Build.BuildLogLen() > maxTraceOutputSize {
+			output := fmt.Sprintf("\nBuild log exceed limit of %v bytes.", maxTraceOutputSize)
 			e.Build.WriteString(output)
 			break
 		}
@@ -67,7 +68,7 @@ func (e *AbstractExecutor) PushTrace(config common.RunnerConfig, canceled chan b
 
 	for {
 		select {
-		case <-time.After(common.UpdateInterval * time.Second):
+		case <-time.After(time.Duration(helpers.NonZeroOrDefault(config.UpdateInterval, common.DefaultUpdateInterval)) * time.Second):
 			// check if build log changed
 			buildTraceLen := e.Build.BuildLogLen()
 			if buildTraceLen == lastSentTrace && time.Since(lastSentTime) > common.ForceTraceSentInterval {

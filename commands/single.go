@@ -8,6 +8,7 @@ import (
 	log "github.com/Sirupsen/logrus"
 
 	"gitlab.com/gitlab-org/gitlab-ci-multi-runner/common"
+	"gitlab.com/gitlab-org/gitlab-ci-multi-runner/helpers"
 	"net/http"
 	"os/signal"
 	"syscall"
@@ -53,12 +54,16 @@ func runHerokuURL(addr string) error {
 func runSingle(c *cli.Context) {
 	buildsDir := c.String("builds-dir")
 	shell := c.String("shell")
+	updateInterval := helpers.IntFromStringOrDefault(c.String("update-interval"), common.DefaultUpdateInterval)
+	maxTraceOutputSize := helpers.IntFromStringOrDefault(c.String("max-trace-output-size"), common.DefaultMaxTraceOutputSize)
 	runner := common.RunnerConfig{
 		URL:       c.String("url"),
 		Token:     c.String("token"),
 		Executor:  c.String("executor"),
 		BuildsDir: &buildsDir,
 		Shell:     &shell,
+		UpdateInterval: &updateInterval,
+		MaxTraceOutputSize: &maxTraceOutputSize,
 	}
 
 	if len(runner.URL) == 0 {
@@ -70,6 +75,8 @@ func runSingle(c *cli.Context) {
 	if len(runner.Executor) == 0 {
 		log.Fatalln("Missing Executor")
 	}
+
+	checkInterval := time.Duration(helpers.IntFromStringOrDefault(c.String("check-interval"), common.DefaultCheckInterval))
 
 	go runServer(c.String("addr"))
 	go runHerokuURL(c.String("heroku-url"))
@@ -116,7 +123,7 @@ func runSingle(c *cli.Context) {
 
 		if buildData == nil {
 			select {
-			case <-time.After(common.CheckInterval * time.Second):
+			case <-time.After(checkInterval * time.Second):
 			case <-abortSignal:
 			}
 			continue
@@ -181,6 +188,24 @@ func init() {
 				Value:  "",
 				Usage:  "Custom builds directory",
 				EnvVar: "RUNNER_BUILDS_DIR",
+			},
+			cli.StringFlag{
+				Name:   "check-interval",
+				Value:  "",
+				Usage:  "Interval between CI checks",
+				EnvVar: "RUNNER_CHECK_INTERVAL",
+			},
+			cli.StringFlag{
+				Name:   "update-interval",
+				Value:  "",
+				Usage:  "Interval between CI updates",
+				EnvVar: "RUNNER_UPDATE_INTERVAL",
+			},
+			cli.StringFlag{
+				Name:   "max-trace-output-size",
+				Value:  "",
+				Usage:  "Maximum size of the output trace",
+				EnvVar: "RUNNER_MAX_TRACE_OUTPUT_SIZE",
 			},
 		},
 	})
