@@ -31,23 +31,27 @@ type AbstractExecutor struct {
 func (e *AbstractExecutor) ReadTrace(pipe *io.PipeReader) {
 	defer e.Debugln("ReadTrace finished")
 
+	traceStopped := false
+
 	reader := bufio.NewReader(pipe)
 	for {
 		r, s, err := reader.ReadRune()
 		if s <= 0 {
 			break
-		} else if err == nil {
+		} else if !traceStopped && err == nil {
 			e.Build.WriteRune(r)
 		} else {
 			// ignore invalid characters
 			continue
 		}
 
-		maxTraceOutputSize := helpers.NonZeroOrDefault(e.Config.MaxTraceOutputSize, common.DefaultMaxTraceOutputSize)
-		if e.Build.BuildLogLen() > maxTraceOutputSize {
-			output := fmt.Sprintf("\nBuild log exceed limit of %v bytes.", maxTraceOutputSize)
-			e.Build.WriteString(output)
-			break
+		if !traceStopped {
+			maxTraceOutputSize := helpers.NonZeroOrDefault(e.Config.MaxTraceOutputSize, common.DefaultMaxTraceOutputSize)
+			if e.Build.BuildLogLen() > maxTraceOutputSize {
+				output := fmt.Sprintf("\nBuild log exceed limit of %v bytes.", maxTraceOutputSize)
+				e.Build.WriteString(output)
+				traceStopped = true
+			}
 		}
 	}
 
