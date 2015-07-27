@@ -64,8 +64,6 @@ func (b *BashShell) GenerateScript(info common.ShellScriptInfo) (*common.ShellSc
 	projectDir = helpers.ToSlash(projectDir)
 	gitDir := filepath.Join(projectDir, ".git")
 
-	projectScript := helpers.ShellEscape(build.FullProjectDir() + ".sh")
-
 	io.WriteString(w, "#!/usr/bin/env bash\n")
 	io.WriteString(w, "\n")
 	io.WriteString(w, "set -eo pipefail\n")
@@ -85,9 +83,8 @@ func (b *BashShell) GenerateScript(info common.ShellScriptInfo) (*common.ShellSc
 	}
 
 	io.WriteString(w, "\n")
-	io.WriteString(w, "# save script that is read from to file and execute script file on remote server\n")
-	io.WriteString(w, fmt.Sprintf("mkdir -p %s\n", helpers.ShellEscape(projectDir)))
-	io.WriteString(w, fmt.Sprintf("cat > %s; source %s\n", projectScript, projectScript))
+	io.WriteString(w, "# execute script in subshell to disable possibility to consume stdin by commands")
+	io.WriteString(w, ": | {")
 	io.WriteString(w, "\n")
 
 	if build.AllowGitFetch {
@@ -115,6 +112,8 @@ func (b *BashShell) GenerateScript(info common.ShellScriptInfo) (*common.ShellSc
 		io.WriteString(w, command+"\n")
 	}
 
+	io.WriteString(w, "\n")
+	io.WriteString(w, "}")
 	io.WriteString(w, "\n")
 
 	w.Flush()
