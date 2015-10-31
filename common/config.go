@@ -22,6 +22,7 @@ type DockerConfig struct {
 	Image                  string   `toml:"image" json:"image" long:"image" env:"DOCKER_IMAGE" description:"Docker image to be used"`
 	Privileged             bool     `toml:"privileged" json:"privileged" long:"privileged" env:"DOCKER_PRIVILEGED" description:"Give extended privileges to container"`
 	DisableCache           *bool    `toml:"disable_cache" json:"disable_cache" long:"disable-cache" env:"DOCKER_DISABLE_CACHE" description:"Disable all container caching"`
+	DisablePull            *bool    `toml:"disable_pull" json:"disable_pull" long:"disable-pull" env:"DOCKER_DISABLE_PULL" description:"Disable docker pull"`
 	Volumes                []string `toml:"volumes" json:"volumes" long:"volumes" env:"DOCKER_VOLUMES" description:"Bind mount a volumes"`
 	CacheDir               *string  `toml:"cache_dir" json:"cache_dir" long:"cache-dir" env:"DOCKER_CACHE_DIR" description:"Directory where to store caches"`
 	ExtraHosts             []string `toml:"extra_hosts" json:"extra_hosts" long:"extra-hosts" env:"DOCKER_EXTRA_HOSTS" description:"Add a custom host-to-IP mapping"`

@@ -85,6 +85,7 @@ This defines the Docker Container parameters.
 | `image`                     | use this image to run builds |
 | `privileged`                | make container run in Privileged mode (insecure) |
 | `disable_cache`             | disable automatic |
+| `disable_pull`              | disable docker pull when begin running |
 | `wait_for_services_timeout` | specify how long to wait for docker services, set to 0 to disable, default: 30 |
 | `cache_dir`                 | specify where Docker caches should be stored (this can be absolute or relative to current working directory) |
 | `volumes`                   | specify additional volumes that should be mounted (same syntax as Docker -v option) |

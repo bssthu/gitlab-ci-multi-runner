@@ -13,4 +13,3 @@ script:
 - make test
 - make toolchain
 - make build
-- make package

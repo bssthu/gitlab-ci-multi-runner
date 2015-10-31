@@ -81,6 +81,9 @@ func (s *DockerExecutor) getDockerImage(imageName string) (*docker.Image, error)
 	s.Debugln("Looking for image", imageName, "...")
 	image, err := s.client.InspectImage(imageName)
 	if err == nil {
+		if helpers.BoolOrDefault(s.Config.Docker.DisablePull, false) {
+			return image, nil
+		}
 		if !pulledImageCache.isExpired(imageName) {
 			return image, nil
 		}
