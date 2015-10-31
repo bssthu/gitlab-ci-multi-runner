@@ -7,7 +7,7 @@ runner written in Go. It runs tests and sends the results to GitLab CI.
 [GitLab CI](https://about.gitlab.com/gitlab-ci) is the open-source
 continuous integration server that coordinates the testing.
 
-[![Build Status](https://travis-ci.org/bssthu/gitlab-ci-multi-runner.svg?branch=dev)
+[![Build Status](https://travis-ci.org/bssthu/gitlab-ci-multi-runner.svg?branch=master)](https://travis-ci.org/bssthu/gitlab-ci-multi-runner)
 
 ### Contributing
 
