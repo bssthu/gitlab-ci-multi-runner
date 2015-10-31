@@ -5,17 +5,17 @@ import (
 	"path"
 
 	log "github.com/Sirupsen/logrus"
-	"gitlab.com/gitlab-org/gitlab-ci-multi-runner/helpers/cli"
+	"github.com/bssthu/gitlab-ci-multi-runner/helpers/cli"
 	"github.com/codegangsta/cli"
 
 	"fmt"
-	_ "gitlab.com/gitlab-org/gitlab-ci-multi-runner/commands"
-	"gitlab.com/gitlab-org/gitlab-ci-multi-runner/common"
-	_ "gitlab.com/gitlab-org/gitlab-ci-multi-runner/shells"
-	_ "gitlab.com/gitlab-org/gitlab-ci-multi-runner/executors/docker"
-	_ "gitlab.com/gitlab-org/gitlab-ci-multi-runner/executors/parallels"
-	_ "gitlab.com/gitlab-org/gitlab-ci-multi-runner/executors/shell"
-	_ "gitlab.com/gitlab-org/gitlab-ci-multi-runner/executors/ssh"
+	_ "github.com/bssthu/gitlab-ci-multi-runner/commands"
+	"github.com/bssthu/gitlab-ci-multi-runner/common"
+	_ "github.com/bssthu/gitlab-ci-multi-runner/shells"
+	_ "github.com/bssthu/gitlab-ci-multi-runner/executors/docker"
+	_ "github.com/bssthu/gitlab-ci-multi-runner/executors/parallels"
+	_ "github.com/bssthu/gitlab-ci-multi-runner/executors/shell"
+	_ "github.com/bssthu/gitlab-ci-multi-runner/executors/ssh"
 )
 
 var NAME = "gitlab-ci-multi-runner"

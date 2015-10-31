@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"gitlab.com/gitlab-org/gitlab-ci-multi-runner/helpers"
+	"github.com/bssthu/gitlab-ci-multi-runner/helpers"
 	"net/url"
 	"os"
 	"path/filepath"

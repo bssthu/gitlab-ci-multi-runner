@@ -8,7 +8,7 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
-	"gitlab.com/gitlab-org/gitlab-ci-multi-runner/helpers"
+	"github.com/bssthu/gitlab-ci-multi-runner/helpers"
 	"io/ioutil"
 )
 

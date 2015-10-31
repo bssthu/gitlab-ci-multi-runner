@@ -4,11 +4,11 @@ import (
 	log "github.com/Sirupsen/logrus"
 	service "github.com/ayufan/golang-kardianos-service"
 	"github.com/codegangsta/cli"
-	"gitlab.com/gitlab-org/gitlab-ci-multi-runner/common"
-	"gitlab.com/gitlab-org/gitlab-ci-multi-runner/helpers"
+	"github.com/bssthu/gitlab-ci-multi-runner/common"
+	"github.com/bssthu/gitlab-ci-multi-runner/helpers"
 	"os"
 	"runtime"
-	"gitlab.com/gitlab-org/gitlab-ci-multi-runner/helpers/service"
+	"github.com/bssthu/gitlab-ci-multi-runner/helpers/service"
 )
 
 const (

@@ -6,5 +6,5 @@ package executors
 // this import forces to load shells before
 // and fixes: panic: no shells defined
 import (
-	_ "gitlab.com/gitlab-org/gitlab-ci-multi-runner/shells"
+	_ "github.com/bssthu/gitlab-ci-multi-runner/shells"
 )

@@ -15,10 +15,10 @@ import (
 
 	"errors"
 	"fmt"
-	"gitlab.com/gitlab-org/gitlab-ci-multi-runner/common"
-	"gitlab.com/gitlab-org/gitlab-ci-multi-runner/helpers"
+	"github.com/bssthu/gitlab-ci-multi-runner/common"
+	"github.com/bssthu/gitlab-ci-multi-runner/helpers"
 	"math"
-	"gitlab.com/gitlab-org/gitlab-ci-multi-runner/helpers/service"
+	"github.com/bssthu/gitlab-ci-multi-runner/helpers/service"
 )
 
 type RunnerHealth struct {

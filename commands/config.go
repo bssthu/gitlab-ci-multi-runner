@@ -1,7 +1,7 @@
 package commands
 
 import (
-	"gitlab.com/gitlab-org/gitlab-ci-multi-runner/common"
+	"github.com/bssthu/gitlab-ci-multi-runner/common"
 	"os"
 )
 

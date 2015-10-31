@@ -3,7 +3,7 @@ package service_helpers
 import (
 	"testing"
 	"github.com/golang/mock/gomock"
-	"gitlab.com/gitlab-org/gitlab-ci-multi-runner/mocks"
+	"github.com/bssthu/gitlab-ci-multi-runner/mocks"
 	"errors"
 	"github.com/stretchr/testify/assert"
 )

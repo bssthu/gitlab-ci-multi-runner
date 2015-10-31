@@ -10,9 +10,9 @@ import (
 	"fmt"
 	"github.com/BurntSushi/toml"
 	log "github.com/Sirupsen/logrus"
-	"gitlab.com/gitlab-org/gitlab-ci-multi-runner/helpers"
-	"gitlab.com/gitlab-org/gitlab-ci-multi-runner/helpers/docker"
-	"gitlab.com/gitlab-org/gitlab-ci-multi-runner/helpers/ssh"
+	"github.com/bssthu/gitlab-ci-multi-runner/helpers"
+	"github.com/bssthu/gitlab-ci-multi-runner/helpers/docker"
+	"github.com/bssthu/gitlab-ci-multi-runner/helpers/ssh"
 	"path/filepath"
 )
 

@@ -6,13 +6,13 @@ import (
 	"os/exec"
 	"time"
 
-	"gitlab.com/gitlab-org/gitlab-ci-multi-runner/common"
-	"gitlab.com/gitlab-org/gitlab-ci-multi-runner/executors"
-	"gitlab.com/gitlab-org/gitlab-ci-multi-runner/helpers/ssh"
+	"github.com/bssthu/gitlab-ci-multi-runner/common"
+	"github.com/bssthu/gitlab-ci-multi-runner/executors"
+	"github.com/bssthu/gitlab-ci-multi-runner/helpers/ssh"
 
-	prl "gitlab.com/gitlab-org/gitlab-ci-multi-runner/parallels"
+	prl "github.com/bssthu/gitlab-ci-multi-runner/parallels"
 
-	"gitlab.com/gitlab-org/gitlab-ci-multi-runner/helpers"
+	"github.com/bssthu/gitlab-ci-multi-runner/helpers"
 )
 
 type ParallelsExecutor struct {

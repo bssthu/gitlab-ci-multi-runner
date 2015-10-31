@@ -2,7 +2,7 @@ package docker_helpers
 
 import (
 	"github.com/fsouza/go-dockerclient"
-	"gitlab.com/gitlab-org/gitlab-ci-multi-runner/helpers"
+	"github.com/bssthu/gitlab-ci-multi-runner/helpers"
 	"os"
 	"path/filepath"
 	"strconv"

@@ -124,7 +124,7 @@ package-deb-fpm:
 		--deb-compression bzip2 \
 		--after-install packaging/scripts/postinst.deb \
 		--before-remove packaging/scripts/prerm.deb \
-		--url https://gitlab.com/gitlab-org/gitlab-ci-multi-runner \
+		--url https://github.com/bssthu/gitlab-ci-multi-runner \
 		--description "GitLab Runner" \
 		-m "Kamil Trzciński <ayufan@ayufan.eu>" \
 		--license "MIT" \
@@ -147,7 +147,7 @@ package-rpm-fpm:
 		--force \
 		--after-install packaging/scripts/postinst.rpm \
 		--before-remove packaging/scripts/prerm.rpm \
-		--url https://gitlab.com/gitlab-org/gitlab-ci-multi-runner \
+		--url https://github.com/bssthu/gitlab-ci-multi-runner \
 		--description "GitLab Runner" \
 		-m "Kamil Trzciński <ayufan@ayufan.eu>" \
 		--license "MIT" \
