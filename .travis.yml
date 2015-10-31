@@ -1,0 +1,17 @@
+language: go
+sudo: false
+addons:
+  apt:
+    packages:
+    - rpm
+go:
+- '1.4'
+install:
+- make deps
+script:
+- make lint
+- make test
+before_deploy:
+- make toolchain
+- make build
+- make package

@@ -1,11 +1,13 @@
 ## GitLab Runner
 
+Forked from https://gitlab.com/gitlab-org/gitlab-ci-multi-runner/ .
+
 This is the GitLab Runner repository, the official GitLab CI
 runner written in Go. It runs tests and sends the results to GitLab CI.
 [GitLab CI](https://about.gitlab.com/gitlab-ci) is the open-source
 continuous integration server that coordinates the testing.
 
-[![Build Status](https://ci.gitlab.com/projects/1885/status.png?ref=master)](https://ci.gitlab.com/projects/1885?ref=master)
+[![Build Status](https://travis-ci.org/bssthu/gitlab-ci-multi-runner.svg?branch=dev)
 
 ### Contributing
 
