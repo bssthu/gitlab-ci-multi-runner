@@ -1,6 +1,6 @@
 // Copyright 2015 Daniel Theophanes.
 // Use of this source code is governed by a zlib-style
-// license that can be found in the LICENSE file.package service
+// license that can be found in the LICENSE file.
 
 package service
 
@@ -11,7 +11,6 @@ import (
 	"os/signal"
 	"syscall"
 	"text/template"
-	"time"
 )
 
 func isSystemd() bool {
@@ -81,9 +80,13 @@ func (s *systemd) Install() error {
 	var to = &struct {
 		*Config
 		Path string
+		ReloadSignal string
+		PIDFile string
 	}{
 		s.Config,
 		path,
+		s.Option.string(optionReloadSignal, ""),
+		s.Option.string(optionPIDFile, ""),
 	}
 
 	err = s.template().Execute(f, to)
@@ -112,7 +115,6 @@ func (s *systemd) Uninstall() error {
 	}
 	return nil
 }
-
 func (s *systemd) Logger(errs chan<- error) (Logger, error) {
 	if system.Interactive() {
 		return ConsoleLogger, nil
@@ -129,11 +131,11 @@ func (s *systemd) Run() (err error) {
 		return err
 	}
 
-	sigChan := make(chan os.Signal, 3)
-
-	signal.Notify(sigChan, syscall.SIGTERM, os.Interrupt)
-
-	<-sigChan
+	s.Option.funcSingle(optionRunWait, func() {
+		var sigChan = make(chan os.Signal, 3)
+		signal.Notify(sigChan, syscall.SIGTERM, os.Interrupt)
+		<-sigChan
+	})()
 
 	return s.i.Stop(s)
 }
@@ -145,14 +147,12 @@ func (s *systemd) Start() error {
 func (s *systemd) Stop() error {
 	return run("systemctl", "stop", s.Name+".service")
 }
+func (s *systemd) Status() error {
+	return checkStatus("systemctl", []string{"status", s.Name + ".service"}, "active (running)", "not-found")
+}
 
 func (s *systemd) Restart() error {
-	err := s.Stop()
-	if err != nil {
-		return err
-	}
-	time.Sleep(50 * time.Millisecond)
-	return s.Start()
+	return run("systemctl", "restart", s.Name+".service")
 }
 
 const systemdScript = `[Unit]
@@ -167,6 +167,8 @@ ExecStart={{.Path}}{{range .Arguments}} {{.|cmd}}{{end}}
 {{if .ChRoot}}RootDirectory={{.ChRoot|cmd}}{{end}}
 {{if .WorkingDirectory}}WorkingDirectory={{.WorkingDirectory|cmd}}{{end}}
 {{if .UserName}}User={{.UserName}}{{end}}
+{{if .ReloadSignal}}ExecReload=/bin/kill -{{.ReloadSignal}} "$MAINPID"{{end}}
+{{if .PIDFile}}PIDFile={{.PIDFile|cmd}}{{end}}
 Restart=always
 RestartSec=120
 

@@ -5,15 +5,19 @@ import (
 
 	log "github.com/Sirupsen/logrus"
 	"github.com/bssthu/gitlab-ci-multi-runner/common"
+	"github.com/bssthu/gitlab-ci-multi-runner/network"
 )
 
 type VerifyCommand struct {
 	configOptions
+	network common.Network
 
 	DeleteNonExisting bool `long:"delete" description:"Delete no longer existing runners?"`
 }
 
 func (c *VerifyCommand) Execute(context *cli.Context) {
+	userModeWarning(true)
+
 	err := c.loadConfig()
 	if err != nil {
 		log.Fatalln(err)
@@ -23,7 +27,7 @@ func (c *VerifyCommand) Execute(context *cli.Context) {
 	// verify if runner exist
 	runners := []*common.RunnerConfig{}
 	for _, runner := range c.config.Runners {
-		if common.VerifyRunner(runner.URL, runner.Token) {
+		if c.network.VerifyRunner(runner.RunnerCredentials) {
 			runners = append(runners, runner)
 		}
 	}
@@ -48,5 +52,7 @@ func (c *VerifyCommand) Execute(context *cli.Context) {
 }
 
 func init() {
-	common.RegisterCommand2("verify",  "verify all registered runners", &VerifyCommand{})
+	common.RegisterCommand2("verify", "verify all registered runners", &VerifyCommand{
+		network: &network.GitLabClient{},
+	})
 }

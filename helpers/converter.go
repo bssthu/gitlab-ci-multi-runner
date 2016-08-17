@@ -3,27 +3,16 @@ package helpers
 import (
 	"bufio"
 	"bytes"
-	"encoding/json"
 	"github.com/BurntSushi/toml"
 	"gopkg.in/yaml.v1"
 )
-
-func ToJson(src interface{}) string {
-	data, err := json.Marshal(src)
-	if err == nil {
-		return string(data)
-	} else {
-		return ""
-	}
-}
 
 func ToYAML(src interface{}) string {
 	data, err := yaml.Marshal(src)
 	if err == nil {
 		return string(data)
-	} else {
-		return ""
 	}
+	return ""
 }
 
 func ToTOML(src interface{}) string {
@@ -39,4 +28,42 @@ func ToTOML(src interface{}) string {
 	}
 
 	return data.String()
+}
+
+func ToConfigMap(list interface{}) (map[string]interface{}, bool) {
+	x, ok := list.(map[string]interface{})
+	if ok {
+		return x, ok
+	}
+
+	y, ok := list.(map[interface{}]interface{})
+	if !ok {
+		return nil, false
+	}
+
+	result := make(map[string]interface{})
+	for k, v := range y {
+		result[k.(string)] = v
+	}
+
+	return result, true
+}
+
+func GetMapKey(value map[string]interface{}, keys ...string) (result interface{}, ok bool) {
+	result = value
+
+	for _, key := range keys {
+		if stringMap, ok := result.(map[string]interface{}); ok {
+			if result, ok = stringMap[key]; ok {
+				continue
+			}
+		} else if interfaceMap, ok := result.(map[interface{}]interface{}); ok {
+			if result, ok = interfaceMap[key]; ok {
+				continue
+			}
+		}
+		return nil, false
+	}
+
+	return result, true
 }

@@ -1,6 +1,7 @@
 package helpers
 
 import (
+	"github.com/stretchr/testify/assert"
 	"testing"
 )
 
@@ -16,9 +17,7 @@ func TestShellEscape(t *testing.T) {
 
 	for _, test := range tests {
 		actual := ShellEscape(test.in)
-		if actual != test.out {
-			t.Error("Expected ", test.out, ", get ", actual)
-		}
+		assert.Equal(t, test.out, actual, "src=%v", test.in)
 	}
 }
 

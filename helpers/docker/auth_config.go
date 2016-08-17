@@ -1,22 +1,22 @@
 package docker_helpers
 
 import (
-	"strings"
-	"path"
 	"github.com/fsouza/go-dockerclient"
-	"os"
 	"io"
+	"os"
+	"path"
+	"strings"
 )
 
-// IndexName is the name of the index
+// DefaultDockerRegistry is the name of the index
 const DefaultDockerRegistry = "docker.io"
 
-// splitReposName breaks a reposName into an index name and remote name
+// SplitDockerImageName breaks a reposName into an index name and remote name
 func SplitDockerImageName(reposName string) (string, string) {
 	nameParts := strings.SplitN(reposName, "/", 2)
 	var indexName, remoteName string
 	if len(nameParts) == 1 || (!strings.Contains(nameParts[0], ".") &&
-	!strings.Contains(nameParts[0], ":") && nameParts[0] != "localhost") {
+		!strings.Contains(nameParts[0], ":") && nameParts[0] != "localhost") {
 		// This is a Docker Index repos (ex: samalba/hipache or ubuntu)
 		// 'docker.io'
 		indexName = DefaultDockerRegistry
@@ -47,7 +47,7 @@ func ReadDockerAuthConfigs(homeDir string) (*docker.AuthConfigurations, error) {
 	return docker.NewAuthConfigurations(r)
 }
 
-// Taken from: https://github.com/docker/docker/blob/master/registry/auth.go
+// ResolveDockerAuthConfig taken from: https://github.com/docker/docker/blob/master/registry/auth.go
 func ResolveDockerAuthConfig(indexName string, configs *docker.AuthConfigurations) *docker.AuthConfiguration {
 	if configs == nil {
 		return nil

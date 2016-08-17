@@ -5,28 +5,54 @@ REVISION := $(shell git rev-parse --short HEAD || echo unknown)
 LAST_TAG := $(shell git describe --tags --abbrev=0)
 COMMITS := $(shell echo `git log --oneline $(LAST_TAG)..HEAD | wc -l`)
 VERSION := $(shell (cat VERSION || echo dev) | sed -e 's/^v//g')
+BUILT := $(shell date +%Y-%m-%dT%H:%M:%S%:z)
 ifneq ($(RELEASE),true)
     VERSION := $(shell echo $(VERSION)~beta.$(COMMITS).g$(REVISION))
 endif
+BRANCH := $(shell git show-ref | grep "$(REVISION)" | grep -v HEAD | awk '{print $$2}' | sed 's|refs/remotes/origin/||' | sed 's|refs/heads/||' | sort | head -n 1)
 ITTERATION := $(shell date +%s)
 PACKAGE_CLOUD ?= ayufan/gitlab-ci-multi-runner
 PACKAGE_CLOUD_URL ?= https://packagecloud.io/
-BUILD_PLATFORMS ?= -os="linux" -os="darwin" -os="windows" -os="freebsd"
+BUILD_PLATFORMS ?= -os '!netbsd' -os '!openbsd'
 S3_UPLOAD_PATH ?= master
-DEB_PLATFORMS ?= debian/wheezy debian/jessie ubuntu/precise ubuntu/trusty ubuntu/utopic ubuntu/vivid
+DEB_PLATFORMS ?= debian/wheezy debian/jessie debian/stretch debian/buster \
+    ubuntu/precise ubuntu/trusty ubuntu/utopic ubuntu/vivid ubuntu/wily ubuntu/xenial \
+    raspbian/wheezy raspbian/jessie raspbian/stretch raspbian/buster \
+    linuxmint/petra linuxmint/qiana linuxmint/rebecca linuxmint/rafaela linuxmint/rosa
 DEB_ARCHS ?= amd64 i386 arm armhf
-RPM_PLATFORMS ?= el/6 el/7 ol/6 ol/7
+RPM_PLATFORMS ?= el/6 el/7 \
+    ol/6 ol/7 \
+    fedora/20 fedora/21 fedora/22 fedora/23
 RPM_ARCHS ?= x86_64 i686 arm armhf
+COMMON_PACKAGE_NAMESPACE=$(shell go list ./common)
+GO_LDFLAGS ?= -X $(COMMON_PACKAGE_NAMESPACE).NAME=$(PACKAGE_NAME) -X $(COMMON_PACKAGE_NAMESPACE).VERSION=$(VERSION) \
+              -X $(COMMON_PACKAGE_NAMESPACE).REVISION=$(REVISION) -X $(COMMON_PACKAGE_NAMESPACE).BUILT=$(BUILT) \
+              -X $(COMMON_PACKAGE_NAMESPACE).BRANCH=$(BRANCH)
+GO_FILES ?= $(shell find . -name '*.go')
+export GO15VENDOREXPERIMENT := 1
+export CGO_ENABLED := 0
 
-all: deps test lint toolchain build
+all: deps verify build
 
 help:
-	# make all => deps test lint toolchain build
+	# Commands:
+	# make all => deps verify build
 	# make version - show information about current version
-	# make deps - install all dependencies
+	#
+	# Development commands:
+	# make install - install the version suitable for your OS as gitlab-ci-multi-runner
+	# make docker - build docker dependencies
+	#
+	# Testing commands:
+	# make verify - run fmt, complexity, test and lint
+	# make fmt - check source formatting
 	# make test - run project tests
 	# make lint - check project code style
-	# make toolchain - install crossplatform toolchain
+	# make vet - examine code and report suspicious constructs
+	# make complexity - check code complexity
+	#
+	# Deployment commands:
+	# make deps - install all dependencies
 	# make build - build project for all supported OSes
 	# make package - package project using FPM
 	# make packagecloud - send all packages to packagecloud
@@ -36,37 +62,133 @@ version: FORCE
 	@echo Current version: $(VERSION)
 	@echo Current iteration: $(ITTERATION)
 	@echo Current revision: $(REVISION)
+	@echo Current branch: $(BRANCH)
+	@echo Build platforms: $(BUILD_PLATFORMS)
+	@echo DEB platforms: $(DEB_PLATFORMS)
+	@echo RPM platforms: $(RPM_PLATFORMS)
+	bash -c 'echo TEST: ${GO15VENDOREXPERIMENT}'
+
+verify: fmt vet lint complexity test
 
 deps:
 	# Installing dependencies...
-	go get github.com/tools/godep
 	go get -u github.com/golang/lint/golint
 	go get github.com/mitchellh/gox
 	go get golang.org/x/tools/cmd/cover
-	-go get golang.org/x/sys/windows/svc
-	godep restore
+	go get github.com/fzipp/gocyclo
+	go get -u github.com/jteeuwen/go-bindata/...
+	go install cmd/vet
 
-	# Fix broken BSD builds
-	rm -rf $(GOPATH)/src/github.com/fsouza/go-dockerclient/external/github.com/Sirupsen/logrus
-	ln -s $(GOPATH)/src/github.com/Sirupsen/logrus $(GOPATH)/src/github.com/fsouza/go-dockerclient/external/github.com/Sirupsen/
+out/docker/prebuilt-x86_64.tar.gz: $(GO_FILES)
+	# Create directory
+	mkdir -p out/docker
 
-toolchain:
-	# Building toolchain...
-	gox -build-toolchain $(BUILD_PLATFORMS)
+ifneq (, $(shell docker info))
+	# Building gitlab-runner-helper
+	gox -osarch=linux/amd64 \
+		-ldflags "$(GO_LDFLAGS)" \
+		-output="dockerfiles/build/gitlab-runner-helper" \
+		./apps/gitlab-runner-helper
 
-build:
-	# Building gitlab-ci-multi-runner for $(BUILD_PLATFORMS)
+	# Build docker images
+	docker build -t gitlab-runner-prebuilt-x86_64:$(REVISION) -f dockerfiles/build/Dockerfile.x86_64 dockerfiles/build
+	-docker rm -f gitlab-runner-prebuilt-x86_64-$(REVISION)
+	docker create --name=gitlab-runner-prebuilt-x86_64-$(REVISION) gitlab-runner-prebuilt-x86_64:$(REVISION) /bin/sh
+	docker export -o out/docker/prebuilt-x86_64.tar gitlab-runner-prebuilt-x86_64-$(REVISION)
+	docker rm -f gitlab-runner-prebuilt-x86_64-$(REVISION)
+	gzip -f -9 out/docker/prebuilt-x86_64.tar
+else
+	$(warning =============================================)
+	$(warning WARNING: downloading prebuilt docker images that will be embedded in gitlab-runner)
+	$(warning WARNING: to use images compiled from your code install Docker Engine)
+	$(warning WARNING: and remove out/docker/prebuilt-x86_64.tar.gz)
+	$(warning =============================================)
+	curl -o out/docker/prebuilt-x86_64.tar.gz \
+		https://gitlab-ci-multi-runner-downloads.s3.amazonaws.com/master/docker/prebuilt-x86_64.tar.gz
+endif
+
+out/docker/prebuilt-arm.tar.gz: $(GO_FILES)
+	# Create directory
+	mkdir -p out/docker
+
+ifneq (, $(shell docker info))
+	# Building gitlab-runner-helper
+	gox -osarch=linux/arm \
+		-ldflags "$(GO_LDFLAGS)" \
+		-output="dockerfiles/build/gitlab-runner-helper" \
+		./apps/gitlab-runner-helper
+
+	# Build docker images
+	docker build -t gitlab-runner-prebuilt-arm:$(REVISION) -f dockerfiles/build/Dockerfile.arm dockerfiles/build
+	-docker rm -f gitlab-runner-prebuilt-arm-$(REVISION)
+	docker create --name=gitlab-runner-prebuilt-arm-$(REVISION) gitlab-runner-prebuilt-arm:$(REVISION) /bin/sh
+	docker export -o out/docker/prebuilt-arm.tar gitlab-runner-prebuilt-arm-$(REVISION)
+	docker rm -f gitlab-runner-prebuilt-arm-$(REVISION)
+	gzip -f -9 out/docker/prebuilt-arm.tar
+else
+	$(warning =============================================)
+	$(warning WARNING: downloading prebuilt docker images that will be embedded in gitlab-runner)
+	$(warning WARNING: to use images compiled from your code install Docker Engine)
+	$(warning WARNING: and remove out/docker/prebuilt-arm.tar.gz)
+	$(warning =============================================)
+	curl -o out/docker/prebuilt-arm.tar.gz \
+		https://gitlab-ci-multi-runner-downloads.s3.amazonaws.com/master/docker/prebuilt-arm.tar.gz
+endif
+
+executors/docker/bindata.go: out/docker/prebuilt-x86_64.tar.gz out/docker/prebuilt-arm.tar.gz
+	# Generating embedded data
+	go-bindata \
+		-pkg docker \
+		-nocompress \
+		-nomemcopy \
+		-nometadata \
+		-prefix out/docker/ \
+		-o executors/docker/bindata.go \
+		out/docker/prebuilt-x86_64.tar.gz \
+		out/docker/prebuilt-arm.tar.gz
+
+docker: executors/docker/bindata.go
+
+build: executors/docker/bindata.go
+	# Building $(NAME) in version $(VERSION) for $(BUILD_PLATFORMS)
 	gox $(BUILD_PLATFORMS) \
-		-ldflags "-X main.NAME $(PACKAGE_NAME) -X main.VERSION $(VERSION) -X main.REVISION $(REVISION)" \
+		-ldflags "$(GO_LDFLAGS)" \
 		-output="out/binaries/$(NAME)-{{.OS}}-{{.Arch}}"
+
+build_simple:
+	# Building $(NAME) in version $(VERSION) for current platform
+	go build \
+		-ldflags "$(GO_LDFLAGS)" \
+		-o "out/binaries/$(NAME)"
+
+build_current: executors/docker/bindata.go build_simple
+
+fmt:
+	# Checking project code formatting...
+	@go fmt ./... | awk '{ print "Please run go fmt"; exit 1 }'
+
+vet:
+	# Checking for suspicious constructs...
+	@go vet ./...
 
 lint:
 	# Checking project code style...
-	golint ./... | grep -v "be unexported"
+	@golint ./... | ( ! grep -v -e "be unexported" -e "don't use an underscore in package name" -e "ALL_CAPS" )
 
-test:
+complexity:
+	# Checking code complexity
+	@gocyclo -over 9 $(shell find . -name '*.go' | grep -v \
+	    -e "/Godeps" \
+	    -e "/helpers/shell_escape.go" \
+	    -e "/executors/parallels/" \
+	    -e "/executors/virtualbox/")
+
+test: executors/docker/bindata.go
 	# Running tests...
-	go test ./... -cover
+	@go test ./... -cover
+
+install: executors/docker/bindata.go
+	go install --ldflags="$(GO_LDFLAGS)"
 
 dockerfiles:
 	make -C dockerfiles all
@@ -75,6 +197,8 @@ mocks: FORCE
 	go get github.com/vektra/mockery/.../
 	rm -rf mocks/
 	mockery -dir=$(GOPATH)/src/github.com/ayufan/golang-kardianos-service -name=Interface
+	mockery -dir=./common -name=Network
+	mockery -dir=./helpers/docker -name=Client
 
 test-docker:
 	make test-docker-image IMAGE=centos:6 TYPE=rpm
@@ -94,6 +218,10 @@ build-and-deploy:
 	make package-deb-fpm ARCH=amd64 PACKAGE_ARCH=amd64
 	scp out/deb/$(PACKAGE_NAME)_amd64.deb $(SERVER):
 	ssh $(SERVER) dpkg -i $(PACKAGE_NAME)_amd64.deb
+
+build-and-deploy-binary:
+	make build BUILD_PLATFORMS="-os=linux -arch=amd64"
+	scp out/binaries/$(PACKAGE_NAME)-linux-amd64 $(SERVER):/usr/bin/gitlab-runner
 
 package: package-deps package-deb package-rpm
 
@@ -134,7 +262,9 @@ package-deb-fpm:
 		--replaces gitlab-runner \
 		--depends ca-certificates \
 		--depends git \
-		--deb-suggests docker \
+		--depends curl \
+		--depends tar \
+		--deb-suggests docker-engine \
 		-a $(PACKAGE_ARCH) \
 		packaging/root/=/ \
 		out/binaries/$(NAME)-linux-$(ARCH)=/usr/bin/gitlab-ci-multi-runner
@@ -155,6 +285,9 @@ package-rpm-fpm:
 		--conflicts $(PACKAGE_CONFLICT) \
 		--provides gitlab-runner \
 		--replaces gitlab-runner \
+		--depends git \
+		--depends curl \
+		--depends tar \
 		-a $(PACKAGE_ARCH) \
 		packaging/root/=/ \
 		out/binaries/$(NAME)-linux-$(ARCH)=/usr/bin/gitlab-ci-multi-runner

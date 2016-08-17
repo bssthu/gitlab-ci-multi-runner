@@ -1,21 +1,21 @@
-// +build linux darwin freebsd
+// +build linux darwin freebsd openbsd
 
 package commands
 
 import (
-	"github.com/bssthu/gitlab-ci-multi-runner/helpers"
 	"os"
 	"path/filepath"
+
+	"github.com/bssthu/gitlab-ci-multi-runner/helpers"
 )
 
-func getDefaultConfigFile() string {
+func getDefaultConfigDirectory() string {
 	if os.Getuid() == 0 {
-		return "/etc/gitlab-runner/config.toml"
+		return "/etc/gitlab-runner"
 	} else if homeDir := helpers.GetHomeDir(); homeDir != "" {
-		return filepath.Join(homeDir, ".gitlab-runner", "config.toml")
+		return filepath.Join(homeDir, ".gitlab-runner")
 	} else if currentDir := helpers.GetCurrentWorkingDirectory(); currentDir != "" {
-		return filepath.Join(currentDir, "config.toml")
-	} else {
-		panic("Cannot get default config file location")
+		return currentDir
 	}
+	panic("Cannot get default config file location")
 }

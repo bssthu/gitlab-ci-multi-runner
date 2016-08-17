@@ -1,3 +1,165 @@
+v 1.5.0 (unreleased)
+
+v 1.4.0
+- Add sentry support
+- Add support for cloning VirtualBox VM snapshots as linked clones
+- Add support for `security_opt` docker configuration parameter in docker executor
+- Add first integration tests for executors
+- Add many logging improvements (add more details to some logs, move some logs to Debug level, refactorize logger etc.)
+- Make final build trace upload be done before cleanup
+- Extend support for caching and artifacts to all executors
+- Improve support for Docker Machine
+- Improve build aborting
+- Refactor common/version
+- Use `environment` feature in `.gitlab-ci.yml` to track latest versions for Bleeding Edge and Stable
+- Fix Absolute method for absolute path discovering for bash
+- Fix zombie issues by using dumb-init instead of github.com/ramr/go-reaper
+
+v 1.3.2
+- Fix architecture detection bug introduced in 1.3.1
+
+v 1.3.1
+- Detect architecture if not given by Docker Engine (versions before 1.9.0)
+
+v 1.3.0
+- Add incremental build trace update
+- Add posibility to specify CpusetCpus, Dns and DnsSearch for docker containers created by runners
+- Add a custom `User-Agent` header with version number and runtime information (go version, platform, os)
+- Add artifacts expiration handling
+- Add artifacts handling for failed builds
+- Add customizable `check_interval` to set how often to check GitLab for a new builds
+- Add docker Machine IP address logging
+- Make Docker Executor ARM compatible
+- Refactor script generation to make it fully on-demand
+- Refactor runnsers Acquire method to improve performance
+- Fix branch name setting at compile time
+- Fix panic when generating log message if provision of node fails
+- Fix docker host logging
+- Prevent leaking of goroutines when aborting builds
+- Restore valid version info in --help message
+- [Experimental] Add `GIT_STRATEGY` handling - clone/fetch strategy configurable per job
+- [Experimental] Add `GIT_DEPTH` handling - `--depth` parameter for `git fetch` and `git clone`
+
+v 1.2.0
+- Use Go 1.6
+- Add `timeout` option for the `exec` command
+- Add runtime platform information to debug log
+- Add `docker-machine` binary to Runner's official docker images
+- Add `build_current` target to Makefile - to build only a binary for used architecture
+- Add support for `after_script`
+- Extend version information when using `--version` flag
+- Extend artifacts download/upload logs with more response data
+- Extend unregister command to accept runner name
+- Update shell detection mechanism
+- Update the github.com/ayufan/golag-kardianos-service dependency
+- Replace ANSI_BOLD_YELLOW with ANSI_YELLOW color for logging
+- Reconcile VirtualBox status constants with VBoxManage output values
+- Make checkout quiet
+- Make variables to work at job level in exec mode
+- Remove "user mode" warning when running in a system mode
+- Create `gitlab-runner` user as a system account
+- Properly create `/etc/gitlab-runner/certs` in Runner's official docker images
+- Disable recursive submodule fetchin on fetching changes
+- Fix nil casting issue on docker client creation
+- Fix used build platforms for `gox`
+- Fix a limit problems when trying to remove a non-existing machines
+- Fix S3 caching issues
+- Fix logging messages on artifacts dowloading
+- Fix binary panic while using VirtualBox executor with no `vboxmanage` binary available
+
+v 1.1.0
+- Use Go 1.5
+- Change license to MIT
+- Add docker-machine based auto-scaling for docker executor
+- Add support for external cache server
+- Add support for `sh`, allowing to run builds on images without the `bash`
+- Add support for passing the artifacts between stages
+- Add `docker-pull-policy`, it removes the `docker-image-ttl`
+- Add `docker-network-mode`
+- Add `git` to gitlab-runner:alpine
+- Add support for `CapAdd`, `CapDrop` and `Devices` by docker executor
+- Add support for passing the name of artifacts archive (`artifacts:name`)
+- Add support for running runner as system service on OSX
+- Refactor: The build trace is now implemented by `network` module
+- Refactor: Remove CGO dependency on Windows
+- Fix: Create alternative aliases for docker services (uses `-`)
+- Fix: VirtualBox port race condition
+- Fix: Create cache for all builds, including tags
+- Fix: Make the shell executor more verbose when the process cannot be started
+- Fix: Pass gitlab-ci.yml variables to build container created by docker executor
+- Fix: Don't restore cache if not defined in gitlab-ci.yml
+- Fix: Always use `json-file` when starting docker containers
+- Fix: Error level checking for Windows Batch and PowerShell
+
+v 1.0.4
+- Fix support for Windows PowerShell
+
+v 1.0.3
+- Fix support for Windows Batch
+- Remove git index lock file: this solves problem with git checkout being terminated
+- Hijack docker.Client to use keep-alives and to close extra connections
+
+v 1.0.2
+- Fix bad warning about not found untracked files
+- Don't print error about existing file when restoring the cache
+- When creating ZIP archive always use forward-slashes and don't permit encoding absolute paths
+- Prefer to use `path` instead of `filepath` which is platform specific: solves the docker executor on Windows
+
+v 1.0.1
+- Use nice log formatting for command line tools
+- Don't ask for services during registration (we prefer the .gitlab-ci.yml)
+- Create all directories when extracting the file
+
+v 1.0.0
+- Add `gitlab-runner exec` command to easy running builds
+- Add `gitlab-runner status` command to easy check the status of the service
+- Add `gitlab-runner list` command to list all runners from config file
+- Allow to specify `ImageTTL` for configuration the frequency of docker image re-pulling (see advanced-configuration)
+- Inject TLS certificate chain for `git clone` in build container, the gitlab-runner SSL certificates are used
+- Remove TLSSkipVerify since this is unsafe option
+- Add go-reaper to make gitlab-runner to act as init 1 process fixing zombie issue when running docker container
+- Create and send artifacts as zip files
+- Add internal commands for creating and extracting archives without the system dependencies
+- Add internal command for uploading artifacts without the system dependencies
+- Use umask in docker build containers to fix running jobs as specific user
+- Fix problem with `cache` paths never being archived
+- Add support for [`cache:key`](http://doc.gitlab.com/ce/ci/yaml/README.html#cachekey)
+- Add warnings about using runner in `user-mode`
+- Push packages to all upcoming distributions (Debian/Ubuntu/Fedora)
+- Rewrite the shell support adding all features to all shells (makes possible to use artifacts and caching on Windows)
+- Complain about missing caching and artifacts on some executors
+- Added VirtualBox executor
+- Embed prebuilt docker build images in runner binary and load them if needed
+- Make possible to cache absolute paths (unsafe on shell executor)
+
+v 0.7.2
+- Adjust `umask` for build image
+- Use absolute path when executing archive command
+- Fix regression when variables were not passed to service container
+- Fix duplicate files in cache or artifacts archive
+
+v 0.7.1
+- Fix caching support
+- Suppress tar verbose output
+
+v 0.7.0
+- Refactor code structure
+- Refactor bash script adding pre-build and post-build steps
+- Add support for build artifacts
+- Add support for caching build directories
+- Add command to generate archive with cached folders or artifacts
+- Use separate containers to run pre-build (git cloning), build (user scripts) and post-build (uploading artifacts)
+- Expand variables, allowing to use $CI_BUILD_TAG in image names, or in other variables
+- Make shell executor to use absolute path for project dir
+- Be strict about code formatting
+- Move network related code to separate package
+- Automatically load TLS certificates stored in /etc/gitlab-runner/certs/<hostname>.crt
+- Allow to specify tls-ca-file during registration
+- Allow to disable tls verification during registration
+
+v 0.6.1
+- Revert: Fix tags handling when using git fetch: fetch all tags and prune the old ones
+
 v 0.6.0
 - Fetch docker auth from ~/.docker/config.json or ~/.dockercfg
 - Added support for NTFSSecurity PowerShell module to address problems with long paths on Windows

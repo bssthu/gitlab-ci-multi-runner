@@ -4,29 +4,44 @@ import (
 	"bytes"
 	"errors"
 	"io"
+	"io/ioutil"
+	"strings"
 	"time"
 
 	"golang.org/x/crypto/ssh"
 
 	"github.com/bssthu/gitlab-ci-multi-runner/helpers"
-	"io/ioutil"
 )
 
-type Command struct {
+type Client struct {
 	Config
 
-	Environment []string
-	Command     string
-	Stdin       []byte
-	Stdout      io.Writer
-	Stderr      io.Writer
-
+	Stdout         io.Writer
+	Stderr         io.Writer
 	ConnectRetries int
 
 	client *ssh.Client
 }
 
-func (s *Command) getSSHKey(identityFile string) (key ssh.Signer, err error) {
+type Command struct {
+	Environment []string
+	Command     []string
+	Stdin       string
+	Abort       chan interface{}
+}
+
+type ExitError struct {
+	Inner error
+}
+
+func (e *ExitError) Error() string {
+	if e.Inner == nil {
+		return "error"
+	}
+	return e.Inner.Error()
+}
+
+func (s *Client) getSSHKey(identityFile string) (key ssh.Signer, err error) {
 	buf, err := ioutil.ReadFile(identityFile)
 	if err != nil {
 		return nil, err
@@ -35,15 +50,12 @@ func (s *Command) getSSHKey(identityFile string) (key ssh.Signer, err error) {
 	return key, err
 }
 
-func (s *Command) getSSHAuthMethods() ([]ssh.AuthMethod, error) {
+func (s *Client) getSSHAuthMethods() ([]ssh.AuthMethod, error) {
 	var methods []ssh.AuthMethod
+	methods = append(methods, ssh.Password(s.Password))
 
-	if s.Password != nil {
-		methods = append(methods, ssh.Password(*s.Password))
-	}
-
-	if s.IdentityFile != nil {
-		key, err := s.getSSHKey(*s.IdentityFile)
+	if s.IdentityFile != "" {
+		key, err := s.getSSHKey(s.IdentityFile)
 		if err != nil {
 			return nil, err
 		}
@@ -53,10 +65,16 @@ func (s *Command) getSSHAuthMethods() ([]ssh.AuthMethod, error) {
 	return methods, nil
 }
 
-func (s *Command) Connect() error {
-	host := helpers.StringOrDefault(s.Host, "localhost")
-	user := helpers.StringOrDefault(s.User, "root")
-	port := helpers.StringOrDefault(s.Port, "22")
+func (s *Client) Connect() error {
+	if s.Host == "" {
+		s.Host = "localhost"
+	}
+	if s.User == "" {
+		s.User = "root"
+	}
+	if s.Port == "" {
+		s.Port = "22"
+	}
 
 	methods, err := s.getSSHAuthMethods()
 	if err != nil {
@@ -64,7 +82,7 @@ func (s *Command) Connect() error {
 	}
 
 	config := &ssh.ClientConfig{
-		User: user,
+		User: s.User,
 		Auth: methods,
 	}
 
@@ -76,7 +94,7 @@ func (s *Command) Connect() error {
 	var finalError error
 
 	for i := 0; i < connectRetries; i++ {
-		client, err := ssh.Dial("tcp", host+":"+port, config)
+		client, err := ssh.Dial("tcp", s.Host+":"+s.Port, config)
 		if err == nil {
 			s.client = client
 			return nil
@@ -88,7 +106,7 @@ func (s *Command) Connect() error {
 	return finalError
 }
 
-func (s *Command) Exec(cmd string) error {
+func (s *Client) Exec(cmd string) error {
 	if s.client == nil {
 		return errors.New("Not connected")
 	}
@@ -104,7 +122,16 @@ func (s *Command) Exec(cmd string) error {
 	return err
 }
 
-func (s *Command) Run() error {
+func (s *Command) fullCommand() string {
+	var arguments []string
+	// TODO: This method is compatible only with Bjourne compatible shells
+	for _, part := range s.Command {
+		arguments = append(arguments, helpers.ShellEscape(part))
+	}
+	return strings.Join(arguments, " ")
+}
+
+func (s *Client) Run(cmd Command) error {
 	if s.client == nil {
 		return errors.New("Not connected")
 	}
@@ -113,24 +140,45 @@ func (s *Command) Run() error {
 	if err != nil {
 		return err
 	}
+	defer session.Close()
 
 	var envVariables bytes.Buffer
-	for _, keyValue := range s.Environment {
+	for _, keyValue := range cmd.Environment {
 		envVariables.WriteString("export " + helpers.ShellEscape(keyValue) + "\n")
 	}
 
 	session.Stdin = io.MultiReader(
 		&envVariables,
-		bytes.NewBuffer(s.Stdin),
+		bytes.NewBufferString(cmd.Stdin),
 	)
 	session.Stdout = s.Stdout
 	session.Stderr = s.Stderr
-	err = session.Run(s.Command)
-	session.Close()
-	return err
+	err = session.Start(cmd.fullCommand())
+	if err != nil {
+		return err
+	}
+
+	waitCh := make(chan error)
+	go func() {
+		err := session.Wait()
+		if _, ok := err.(*ssh.ExitError); ok {
+			err = &ExitError{Inner: err}
+		}
+		waitCh <- err
+	}()
+
+	select {
+	case <-cmd.Abort:
+		session.Signal(ssh.SIGKILL)
+		session.Close()
+		return <-waitCh
+
+	case err := <-waitCh:
+		return err
+	}
 }
 
-func (s *Command) Cleanup() {
+func (s *Client) Cleanup() {
 	if s.client != nil {
 		s.client.Close()
 	}

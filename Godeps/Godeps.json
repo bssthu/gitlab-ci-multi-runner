@@ -1,14 +1,14 @@
 {
-	"ImportPath": "github.com/bssthu/gitlab-ci-multi-runner",
-	"GoVersion": "go1.4.2",
+	"ImportPath": "gitlab.com/gitlab-org/gitlab-ci-multi-runner",
+	"GoVersion": "go1.6.0",
 	"Packages": [
 		"./..."
 	],
 	"Deps": [
 		{
 			"ImportPath": "github.com/BurntSushi/toml",
-			"Comment": "v0.1.0-9-g3883ac1",
-			"Rev": "3883ac1ce943878302255f538fce319d23226223"
+			"Comment": "v0.1.0-24-gffbe061",
+			"Rev": "ffbe061dbf09df6f4d404ef06736cc2b9e2510f7"
 		},
 		{
 			"ImportPath": "github.com/Sirupsen/logrus",
@@ -17,7 +17,7 @@
 		},
 		{
 			"ImportPath": "github.com/ayufan/golang-kardianos-service",
-			"Rev": "c03d3ad4a038e0183fcddfe1f640089b894796c5"
+			"Rev": "0c8eb6d8fff2e2fb884a7bfd23e183fb63c0eff3"
 		},
 		{
 			"ImportPath": "github.com/codegangsta/cli",
@@ -25,8 +25,17 @@
 			"Rev": "142e6cd241a4dfbf7f07a018f1f8225180018da4"
 		},
 		{
+			"ImportPath": "github.com/docker/docker/pkg/homedir",
+			"Comment": "v1.4.1-5743-g7ead74d",
+			"Rev": "7ead74d903de625eef9dc0ec83ba5bcedd0bc0dc"
+		},
+		{
 			"ImportPath": "github.com/fsouza/go-dockerclient",
-			"Rev": "163268693e2cf8be2920158b59ef438fc77b85e2"
+			"Rev": "0099401a7342ad77e71ca9f9a57c5e72fb80f6b2"
+		},
+		{
+			"ImportPath": "github.com/getsentry/raven-go",
+			"Rev": "dffeb57df75d6a911f00232155194e43d79d38d7"
 		},
 		{
 			"ImportPath": "github.com/golang/mock/gomock",
@@ -35,6 +44,16 @@
 		{
 			"ImportPath": "github.com/kardianos/osext",
 			"Rev": "efacde03154693404c65e7aa7d461ac9014acd0c"
+		},
+		{
+			"ImportPath": "github.com/minio/minio-go",
+			"Comment": "1.0.1-38-ge9fd7b8",
+			"Rev": "e9fd7b820d9a87122e159439ca034472040a43ce"
+		},
+		{
+			"ImportPath": "github.com/opencontainers/runc/libcontainer/user",
+			"Comment": "v0.0.7-31-g4f60120",
+			"Rev": "4f601205d475e1995472d81b3787b197008c5dd7"
 		},
 		{
 			"ImportPath": "github.com/stretchr/objx",
@@ -49,12 +68,28 @@
 			"Rev": "1297dc01ed0a819ff634c89707081a4df43baf6b"
 		},
 		{
+			"ImportPath": "github.com/stretchr/testify/require",
+			"Rev": "1297dc01ed0a819ff634c89707081a4df43baf6b"
+		},
+		{
 			"ImportPath": "gitlab.com/ayufan/golang-cli-helpers",
 			"Rev": "0a14b63a7466ee44de4a90f998fad73afa8482bf"
 		},
 		{
+			"ImportPath": "golang.org/x/crypto/curve25519",
+			"Rev": "1f22c0103821b9390939b6776727195525381532"
+		},
+		{
 			"ImportPath": "golang.org/x/crypto/ssh",
-			"Rev": "1351f936d976c60a0a48d728281922cf63eafb8d"
+			"Rev": "1f22c0103821b9390939b6776727195525381532"
+		},
+		{
+			"ImportPath": "golang.org/x/sys/unix",
+			"Rev": "98fc11432b951eb53c62602ba4ae99d03c1fb7e2"
+		},
+		{
+			"ImportPath": "golang.org/x/sys/windows",
+			"Rev": "98fc11432b951eb53c62602ba4ae99d03c1fb7e2"
 		},
 		{
 			"ImportPath": "gopkg.in/yaml.v1",

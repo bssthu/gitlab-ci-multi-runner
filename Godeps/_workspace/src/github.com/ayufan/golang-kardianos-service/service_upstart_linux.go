@@ -1,6 +1,6 @@
 // Copyright 2015 Daniel Theophanes.
 // Use of this source code is governed by a zlib-style
-// license that can be found in the LICENSE file.package service
+// license that can be found in the LICENSE file.
 
 package service
 
@@ -117,11 +117,11 @@ func (s *upstart) Run() (err error) {
 		return err
 	}
 
-	sigChan := make(chan os.Signal, 3)
-
-	signal.Notify(sigChan, os.Interrupt, os.Kill)
-
-	<-sigChan
+	s.Option.funcSingle(optionRunWait, func() {
+		var sigChan = make(chan os.Signal, 3)
+		signal.Notify(sigChan, os.Interrupt, os.Kill)
+		<-sigChan
+	})()
 
 	return s.i.Stop(s)
 }
@@ -132,6 +132,10 @@ func (s *upstart) Start() error {
 
 func (s *upstart) Stop() error {
 	return run("initctl", "stop", s.Name)
+}
+
+func (s *upstart) Status() error {
+	return checkStatus("initctl", []string{"status", s.Name}, "start/running", "Unknown job")
 }
 
 func (s *upstart) Restart() error {
@@ -161,7 +165,7 @@ respawn
 respawn limit 10 5
 umask 022
 
-console none
+console log
 
 pre-start script
     test -x {{.Path}} || { stop; exit 0; }
@@ -170,6 +174,5 @@ end script
 # Start
 # Due to bug in Precise Upstart this is the only way to inherit user groups
 # http://upstart.ubuntu.com/cookbook/#changing-user
-exec start-stop-daemon --start {{if .UserName}}-c {{.UserName|cmd}}{{end}} {{if .WorkingDirectory}}-d {{.WorkingDirectory|cmd}}{{end}} --exec {{.Path}} -- {{range .Arguments}} {{.|cmd}}{{end}}
+exec start-stop-daemon --start {{if .UserName}}--user {{.UserName|cmd}} -c {{.UserName|cmd}}{{else}}--user root{{end}} {{if .WorkingDirectory}}-d {{.WorkingDirectory|cmd}}{{end}} --exec {{.Path}} -- {{range .Arguments}} {{.|cmd}}{{end}}
 `
-

@@ -2,80 +2,91 @@ package docker
 
 import (
 	"bytes"
-	"fmt"
+	"errors"
 
 	"github.com/fsouza/go-dockerclient"
-
 	"github.com/bssthu/gitlab-ci-multi-runner/common"
 	"github.com/bssthu/gitlab-ci-multi-runner/executors"
 )
 
-type DockerCommandExecutor struct {
-	DockerExecutor
+type commandExecutor struct {
+	executor
+	predefinedContainer *docker.Container
+	buildContainer      *docker.Container
 }
 
-func (s *DockerCommandExecutor) Start() error {
-	s.Debugln("Starting Docker command...")
-
-	// Create container
-	err := s.createBuildContainer(s.ShellScript.GetCommandWithArguments())
+func (s *commandExecutor) Prepare(globalConfig *common.Config, config *common.RunnerConfig, build *common.Build) error {
+	err := s.executor.Prepare(globalConfig, config, build)
 	if err != nil {
 		return err
 	}
 
-	// Wait for process to exit
-	go func() {
-		attachContainerOptions := docker.AttachToContainerOptions{
-			Container:    s.buildContainer.ID,
-			InputStream:  bytes.NewBufferString(s.ShellScript.Script),
-			OutputStream: s.BuildLog,
-			ErrorStream:  s.BuildLog,
-			Logs:         true,
-			Stream:       true,
-			Stdin:        true,
-			Stdout:       true,
-			Stderr:       true,
-			RawTerminal:  false,
-		}
+	s.Debugln("Starting Docker command...")
 
-		s.Debugln("Attaching to container...")
-		err := s.client.AttachToContainer(attachContainerOptions)
-		if err != nil {
-			s.BuildFinish <- err
-			return
-		}
+	if len(s.BuildShell.DockerCommand) == 0 {
+		return errors.New("Script is not compatible with Docker")
+	}
 
-		s.Debugln("Waiting for container...")
-		exitCode, err := s.client.WaitContainer(s.buildContainer.ID)
-		if err != nil {
-			s.BuildFinish <- err
-			return
-		}
+	imageName, err := s.getImageName()
+	if err != nil {
+		return err
+	}
 
-		if exitCode == 0 {
-			s.BuildFinish <- nil
-		} else {
-			s.BuildFinish <- fmt.Errorf("exit code %d", exitCode)
-		}
-	}()
+	options, err := s.prepareBuildContainer()
+	if err != nil {
+		return err
+	}
+
+	buildImage, err := s.getPrebuiltImage()
+	if err != nil {
+		return err
+	}
+
+	// Start pre-build container which will git clone changes
+	s.predefinedContainer, err = s.createContainer("predefined", buildImage.ID, []string{"gitlab-runner-build"}, *options)
+	if err != nil {
+		return err
+	}
+
+	// Start build container which will run actual build
+	s.buildContainer, err = s.createContainer("build", imageName, s.BuildShell.DockerCommand, *options)
+	if err != nil {
+		return err
+	}
 	return nil
+}
+
+func (s *commandExecutor) Run(cmd common.ExecutorCommand) error {
+	var container *docker.Container
+
+	if cmd.Predefined {
+		container = s.predefinedContainer
+	} else {
+		container = s.buildContainer
+	}
+
+	s.Debugln("Executing on", container.Name, "the", cmd.Script)
+
+	return s.watchContainer(container, bytes.NewBufferString(cmd.Script), cmd.Abort)
 }
 
 func init() {
 	options := executors.ExecutorOptions{
 		DefaultBuildsDir: "/builds",
+		DefaultCacheDir:  "/cache",
 		SharedBuildsDir:  false,
 		Shell: common.ShellScriptInfo{
-			Shell: "bash",
-			Type:  common.NormalShell,
+			Shell:         "bash",
+			Type:          common.NormalShell,
+			RunnerCommand: "/usr/bin/gitlab-runner-helper",
 		},
 		ShowHostname:     true,
 		SupportedOptions: []string{"image", "services"},
 	}
 
-	create := func() common.Executor {
-		return &DockerCommandExecutor{
-			DockerExecutor: DockerExecutor{
+	creator := func() common.Executor {
+		return &commandExecutor{
+			executor: executor{
 				AbstractExecutor: executors.AbstractExecutor{
 					ExecutorOptions: options,
 				},
@@ -83,12 +94,14 @@ func init() {
 		}
 	}
 
-	common.RegisterExecutor("docker", common.ExecutorFactory{
-		Create: create,
-		Features: common.FeaturesInfo{
-			Variables: true,
-			Image:     true,
-			Services:  true,
-		},
+	featuresUpdater := func(features *common.FeaturesInfo) {
+		features.Variables = true
+		features.Image = true
+		features.Services = true
+	}
+
+	common.RegisterExecutor("docker", executors.DefaultExecutorProvider{
+		Creator:         creator,
+		FeaturesUpdater: featuresUpdater,
 	})
 }

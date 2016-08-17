@@ -8,23 +8,44 @@ import (
 	"os/exec"
 	"path/filepath"
 
+	"fmt"
+	"github.com/Sirupsen/logrus"
+	"github.com/kardianos/osext"
 	"github.com/bssthu/gitlab-ci-multi-runner/common"
 	"github.com/bssthu/gitlab-ci-multi-runner/executors"
 	"github.com/bssthu/gitlab-ci-multi-runner/helpers"
+	"time"
 )
 
-type ShellExecutor struct {
+type executor struct {
 	executors.AbstractExecutor
-	cmd       *exec.Cmd
-	scriptDir string
 }
 
-func (s *ShellExecutor) Prepare(globalConfig *common.Config, config *common.RunnerConfig, build *common.Build) error {
+func (s *executor) Prepare(globalConfig *common.Config, config *common.RunnerConfig, build *common.Build) error {
 	if globalConfig != nil {
-		s.Shell.User = globalConfig.User
+		s.Shell().User = globalConfig.User
 	}
 
-	err := s.AbstractExecutor.Prepare(globalConfig, config, build)
+	// expand environment variables to have current directory
+	wd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("Getwd: %v", err)
+	}
+
+	mapping := func(key string) string {
+		switch key {
+		case "PWD":
+			return wd
+		default:
+			return ""
+		}
+	}
+
+	s.DefaultBuildsDir = os.Expand(s.DefaultBuildsDir, mapping)
+	s.DefaultCacheDir = os.Expand(s.DefaultCacheDir, mapping)
+
+	// Pass control to executor
+	err = s.AbstractExecutor.Prepare(globalConfig, config, build)
 	if err != nil {
 		return err
 	}
@@ -33,86 +54,110 @@ func (s *ShellExecutor) Prepare(globalConfig *common.Config, config *common.Runn
 	return nil
 }
 
-func (s *ShellExecutor) Start() error {
-	s.Debugln("Starting shell command...")
+func (s *executor) killAndWait(cmd *exec.Cmd, waitCh chan error) error {
+	for {
+		s.Debugln("Aborting command...")
+		helpers.KillProcessGroup(cmd)
+		select {
+		case <-time.After(time.Second):
+		case err := <-waitCh:
+			return err
+		}
+	}
+}
 
+func (s *executor) Run(cmd common.ExecutorCommand) error {
 	// Create execution command
-	s.cmd = exec.Command(s.ShellScript.Command, s.ShellScript.Arguments...)
-	if s.cmd == nil {
+	c := exec.Command(s.BuildShell.Command, s.BuildShell.Arguments...)
+	if c == nil {
 		return errors.New("Failed to generate execution command")
 	}
 
-	helpers.SetProcessGroup(s.cmd)
+	helpers.SetProcessGroup(c)
+	defer helpers.KillProcessGroup(c)
 
 	// Fill process environment variables
-	s.cmd.Env = append(os.Environ(), s.ShellScript.Environment...)
-	s.cmd.Stdout = s.BuildLog
-	s.cmd.Stderr = s.BuildLog
+	c.Env = append(os.Environ(), s.BuildShell.Environment...)
+	c.Stdout = s.BuildTrace
+	c.Stderr = s.BuildTrace
 
-	if s.ShellScript.PassFile {
+	if s.BuildShell.PassFile {
 		scriptDir, err := ioutil.TempDir("", "build_script")
 		if err != nil {
 			return err
 		}
-		s.scriptDir = scriptDir
+		defer os.RemoveAll(scriptDir)
 
-		scriptFile := filepath.Join(scriptDir, "script."+s.ShellScript.Extension)
-		err = ioutil.WriteFile(scriptFile, s.ShellScript.GetScriptBytes(), 0700)
+		scriptFile := filepath.Join(scriptDir, "script."+s.BuildShell.Extension)
+		err = ioutil.WriteFile(scriptFile, []byte(cmd.Script), 0700)
 		if err != nil {
 			return err
 		}
 
-		s.cmd.Args = append(s.cmd.Args, scriptFile)
+		c.Args = append(c.Args, scriptFile)
 	} else {
-		s.cmd.Stdin = bytes.NewReader(s.ShellScript.GetScriptBytes())
+		c.Stdin = bytes.NewBufferString(cmd.Script)
 	}
 
-	// Start process
-	err := s.cmd.Start()
+	// Start a process
+	err := c.Start()
 	if err != nil {
-		return errors.New("Failed to start process")
+		return fmt.Errorf("Failed to start process: %s", err)
 	}
 
-	// Wait for process to exit
+	// Wait for process to finish
+	waitCh := make(chan error)
 	go func() {
-		s.BuildFinish <- s.cmd.Wait()
+		err := c.Wait()
+		if _, ok := err.(*exec.ExitError); ok {
+			err = &common.BuildError{Inner: err}
+		}
+		waitCh <- err
 	}()
-	return nil
-}
 
-func (s *ShellExecutor) Cleanup() {
-	helpers.KillProcessGroup(s.cmd)
+	// Support process abort
+	select {
+	case err = <-waitCh:
+		return err
 
-	if s.scriptDir != "" {
-		os.RemoveAll(s.scriptDir)
+	case <-cmd.Abort:
+		return s.killAndWait(c, waitCh)
 	}
-
-	s.AbstractExecutor.Cleanup()
 }
 
 func init() {
+	// Look for self
+	runnerCommand, err := osext.Executable()
+	if err != nil {
+		logrus.Warningln(err)
+	}
+
 	options := executors.ExecutorOptions{
-		DefaultBuildsDir: "builds",
+		DefaultBuildsDir: "$PWD/builds",
+		DefaultCacheDir:  "$PWD/cache",
 		SharedBuildsDir:  true,
 		Shell: common.ShellScriptInfo{
-			Shell: common.GetDefaultShell(),
-			Type:  common.LoginShell,
+			Shell:         common.GetDefaultShell(),
+			Type:          common.LoginShell,
+			RunnerCommand: runnerCommand,
 		},
 		ShowHostname: false,
 	}
 
-	create := func() common.Executor {
-		return &ShellExecutor{
+	creator := func() common.Executor {
+		return &executor{
 			AbstractExecutor: executors.AbstractExecutor{
 				ExecutorOptions: options,
 			},
 		}
 	}
 
-	common.RegisterExecutor("shell", common.ExecutorFactory{
-		Create: create,
-		Features: common.FeaturesInfo{
-			Variables: true,
-		},
+	featuresUpdater := func(features *common.FeaturesInfo) {
+		features.Variables = true
+	}
+
+	common.RegisterExecutor("shell", executors.DefaultExecutorProvider{
+		Creator:         creator,
+		FeaturesUpdater: featuresUpdater,
 	})
 }

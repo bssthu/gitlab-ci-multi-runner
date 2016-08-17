@@ -1,13 +1,15 @@
 package commands
 
 import (
-	log "github.com/Sirupsen/logrus"
-	service "github.com/ayufan/golang-kardianos-service"
+	"fmt"
+	"os"
+	"runtime"
+
+	"github.com/Sirupsen/logrus"
+	"github.com/ayufan/golang-kardianos-service"
 	"github.com/codegangsta/cli"
 	"github.com/bssthu/gitlab-ci-multi-runner/common"
 	"github.com/bssthu/gitlab-ci-multi-runner/helpers"
-	"os"
-	"runtime"
 	"github.com/bssthu/gitlab-ci-multi-runner/helpers/service"
 )
 
@@ -19,26 +21,31 @@ const (
 
 type ServiceLogHook struct {
 	service.Logger
+	Level logrus.Level
 }
 
-func (s *ServiceLogHook) Levels() []log.Level {
-	return []log.Level{
-		log.PanicLevel,
-		log.FatalLevel,
-		log.ErrorLevel,
-		log.WarnLevel,
-		log.InfoLevel,
+func (s *ServiceLogHook) Levels() []logrus.Level {
+	return []logrus.Level{
+		logrus.PanicLevel,
+		logrus.FatalLevel,
+		logrus.ErrorLevel,
+		logrus.WarnLevel,
+		logrus.InfoLevel,
 	}
 }
 
-func (s *ServiceLogHook) Fire(e *log.Entry) error {
-	switch e.Level {
-	case log.PanicLevel, log.FatalLevel, log.ErrorLevel:
-		s.Error(e.Message)
-	case log.WarnLevel:
-		s.Warning(e.Message)
-	case log.InfoLevel:
-		s.Info(e.Message)
+func (s *ServiceLogHook) Fire(entry *logrus.Entry) error {
+	if entry.Level > s.Level {
+		return nil
+	}
+
+	switch entry.Level {
+	case logrus.PanicLevel, logrus.FatalLevel, logrus.ErrorLevel:
+		s.Error(entry.String())
+	case logrus.WarnLevel:
+		s.Warning(entry.String())
+	case logrus.InfoLevel:
+		s.Info(entry.String())
 	}
 	return nil
 }
@@ -56,7 +63,7 @@ func (n *NullService) Stop(s service.Service) error {
 
 func runServiceInstall(s service.Service, c *cli.Context) error {
 	if user := c.String("user"); user == "" && os.Getuid() == 0 {
-		log.Fatal("Please specify user that will run gitlab-runner service")
+		logrus.Fatal("Please specify user that will run gitlab-runner service")
 	}
 
 	if configFile := c.String("config"); configFile != "" {
@@ -78,78 +85,95 @@ func runServiceInstall(s service.Service, c *cli.Context) error {
 	return service.Control(s, "install")
 }
 
-func RunServiceControl(c *cli.Context) {
-	// detect whether we want to install as user service or system service
-	isUserService := os.Getuid() != 0
-	if runtime.GOOS == "windows" {
-		isUserService = true
+func runServiceStatus(displayName string, s service.Service, c *cli.Context) error {
+	err := s.Status()
+	if err == nil {
+		fmt.Println(displayName+":", "Service is running!")
+	} else {
+		fmt.Fprintln(os.Stderr, displayName+":", err)
+		os.Exit(1)
+	}
+	return nil
+}
+
+func getServiceArguments(c *cli.Context) (arguments []string) {
+	if wd := c.String("working-directory"); wd != "" {
+		arguments = append(arguments, "--working-directory", wd)
 	}
 
-	// when installing service as system wide service don't specify username for service
-	serviceUserName := c.String("user")
-	if !isUserService {
-		serviceUserName = ""
+	if config := c.String("config"); config != "" {
+		arguments = append(arguments, "--config", config)
 	}
 
-	if isUserService && runtime.GOOS == "linux" {
-		log.Fatal("Please run the commands as root")
+	if sn := c.String("service"); sn != "" {
+		arguments = append(arguments, "--service", sn)
 	}
 
-	svcConfig := &service.Config{
+	arguments = append(arguments, "--syslog")
+	return
+}
+
+func createServiceConfig(c *cli.Context) (svcConfig *service.Config) {
+	svcConfig = &service.Config{
 		Name:        c.String("service"),
 		DisplayName: c.String("service"),
 		Description: defaultDescription,
 		Arguments:   []string{"run"},
-		UserName:    serviceUserName,
 	}
+	svcConfig.Arguments = append(svcConfig.Arguments, getServiceArguments(c)...)
 
 	switch runtime.GOOS {
+	case "linux":
+		if os.Getuid() != 0 {
+			logrus.Fatal("Please run the commands as root")
+		}
+		if user := c.String("user"); user != "" {
+			svcConfig.Arguments = append(svcConfig.Arguments, "--user", user)
+		}
+
 	case "darwin":
 		svcConfig.Option = service.KeyValue{
-			"KeepAlive":     true,
-			"RunAtLoad":     true,
-			"SessionCreate": true,
-			"UserService":   isUserService,
+			"KeepAlive":   true,
+			"RunAtLoad":   true,
+			"UserService": os.Getuid() != 0,
+		}
+
+		if user := c.String("user"); user != "" {
+			if os.Getuid() == 0 {
+				svcConfig.Arguments = append(svcConfig.Arguments, "--user", user)
+			} else {
+				logrus.Fatalln("The --user is not supported for non-root users")
+			}
 		}
 
 	case "windows":
 		svcConfig.Option = service.KeyValue{
 			"Password": c.String("password"),
 		}
+		svcConfig.UserName = c.String("user")
 	}
+	return
+}
 
-	if wd := c.String("working-directory"); wd != "" {
-		svcConfig.Arguments = append(svcConfig.Arguments, "--working-directory", wd)
-	}
-
-	if config := c.String("config"); config != "" {
-		svcConfig.Arguments = append(svcConfig.Arguments, "--config", config)
-	}
-
-	if sn := c.String("service"); sn != "" {
-		svcConfig.Arguments = append(svcConfig.Arguments, "--service", sn)
-	}
-
-	if user := c.String("user"); !isUserService && user != "" {
-		svcConfig.Arguments = append(svcConfig.Arguments, "--user", user)
-	}
-
-	svcConfig.Arguments = append(svcConfig.Arguments, "--syslog")
+func RunServiceControl(c *cli.Context) {
+	svcConfig := createServiceConfig(c)
 
 	s, err := service_helpers.New(&NullService{}, svcConfig)
 	if err != nil {
-		log.Fatal(err)
+		logrus.Fatal(err)
 	}
 
 	switch c.Command.Name {
 	case "install":
 		err = runServiceInstall(s, c)
+	case "status":
+		err = runServiceStatus(svcConfig.DisplayName, s, c)
 	default:
 		err = service.Control(s, c.Command.Name)
 	}
 
 	if err != nil {
-		log.Fatal(err)
+		logrus.Fatal(err)
 	}
 }
 
@@ -177,7 +201,7 @@ func init() {
 	if runtime.GOOS == "windows" {
 		installFlags = append(installFlags, cli.StringFlag{
 			Name:  "user, u",
-			Value: helpers.GetCurrentUserName(),
+			Value: "",
 			Usage: "Specify user-name to secure the runner",
 		})
 		installFlags = append(installFlags, cli.StringFlag{
@@ -220,6 +244,12 @@ func init() {
 	common.RegisterCommand(cli.Command{
 		Name:   "restart",
 		Usage:  "restart service",
+		Action: RunServiceControl,
+		Flags:  flags,
+	})
+	common.RegisterCommand(cli.Command{
+		Name:   "status",
+		Usage:  "get status of a service",
 		Action: RunServiceControl,
 		Flags:  flags,
 	})

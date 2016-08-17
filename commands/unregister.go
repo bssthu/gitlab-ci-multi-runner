@@ -5,21 +5,36 @@ import (
 
 	log "github.com/Sirupsen/logrus"
 	"github.com/bssthu/gitlab-ci-multi-runner/common"
+	"github.com/bssthu/gitlab-ci-multi-runner/network"
 )
 
 type UnregisterCommand struct {
 	configOptions
 	common.RunnerCredentials
+	network common.Network
+	Name    string `toml:"name" json:"name" short:"n" long:"name" description:"Name of the runner you wish to unregister"`
 }
 
 func (c *UnregisterCommand) Execute(context *cli.Context) {
-	if !common.DeleteRunner(c.URL, c.Token) {
-		log.Fatalln("Failed to delete runner")
-	}
+	userModeWarning(false)
 
 	err := c.loadConfig()
 	if err != nil {
-		log.Warningln(err)
+		log.Fatalln(err)
+		return
+	}
+
+	if len(c.Name) > 0 {
+		runnerConfig, err := c.RunnerByName(c.Name)
+		if err != nil {
+			log.Fatalln(err)
+			return
+		}
+		c.RunnerCredentials = runnerConfig.RunnerCredentials
+	}
+
+	if !c.network.DeleteRunner(c.RunnerCredentials) {
+		log.Fatalln("Failed to delete runner", c.Name)
 		return
 	}
 
@@ -47,5 +62,7 @@ func (c *UnregisterCommand) Execute(context *cli.Context) {
 }
 
 func init() {
-	common.RegisterCommand2("unregister", "unregister specific runner", &UnregisterCommand{})
+	common.RegisterCommand2("unregister", "unregister specific runner", &UnregisterCommand{
+		network: &network.GitLabClient{},
+	})
 }

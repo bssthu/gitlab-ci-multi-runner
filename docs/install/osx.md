@@ -5,7 +5,7 @@
 Download the binary for your system:
 
 ```bash
-sudo wget -O /usr/local/bin/gitlab-ci-multi-runner https://gitlab-ci-multi-runner-downloads.s3.amazonaws.com/latest/binaries/gitlab-ci-multi-runner-darwin-amd64
+sudo curl --output /usr/local/bin/gitlab-ci-multi-runner https://gitlab-ci-multi-runner-downloads.s3.amazonaws.com/latest/binaries/gitlab-ci-multi-runner-darwin-amd64
 ```
 
 Give it permissions to execute:
@@ -56,7 +56,7 @@ gitlab-ci-multi-runner stop
 Download binary to replace runner's executable:
 
 ```bash
-wget -O /usr/local/bin/gitlab-ci-multi-runner https://gitlab-ci-multi-runner-downloads.s3.amazonaws.com/latest/binaries/gitlab-ci-multi-runner-darwin-amd64
+curl -o /usr/local/bin/gitlab-ci-multi-runner https://gitlab-ci-multi-runner-downloads.s3.amazonaws.com/latest/binaries/gitlab-ci-multi-runner-darwin-amd64
 ```
 
 Give it permissions to execute:
@@ -68,5 +68,44 @@ chmod +x /usr/local/bin/gitlab-ci-multi-runner
 Start the service:
 
 ```bash
+gitlab-ci-multi-runner start
+```
+
+Make sure that you read the [FAQ](../faq/README.md) section which describes
+some of the most common problems with GitLab Runner.
+
+### Limitations on OSX
+
+>**Note:**
+The service needs to be installed from the Terminal by running its GUI
+interface as your current user. Only then will you be able to manage the service.
+
+Currently, the only proven to work mode for OSX is running service in user-mode.
+
+Since the service will be running only when the user is logged in, you should
+enable auto-logging on your OSX machine.
+
+The service will be launched as one of `LaunchAgents`. By using `LaunchAgents`,
+the builds will be able to do UI interactions, making it possible to run and
+test on the iOS simulator.
+
+It's worth noting that OSX also has `LaunchDaemons`, the services running
+completely in background. `LaunchDaemons` are run on system startup, but they
+don't have the same access to UI interactions as `LaunchAgents`. You can try to
+run the Runner's service as `LaunchDaemon`, but this mode of operation is not
+currently supported.
+
+You can verify that the Runner created the service configuration file after
+executing the `install` command, by checking the
+`~user/Library/LaunchAgents/gitlab-runner.plist` file.
+
+### Upgrade the service file
+
+In order to upgrade the `LaunchAgent` configuration, you need to uninstall and
+install the service:
+
+```bash
+gitlab-ci-multi-runner uninstall
+gitlab-ci-multi-runner install
 gitlab-ci-multi-runner start
 ```

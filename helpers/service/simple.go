@@ -1,11 +1,11 @@
 package service_helpers
 
 import (
+	"errors"
 	service "github.com/ayufan/golang-kardianos-service"
 	"os"
-	"syscall"
 	"os/signal"
-	"errors"
+	"syscall"
 )
 
 var (
@@ -62,7 +62,13 @@ func (s *SimpleService) Uninstall() error {
 	return ErrNotSupported
 }
 
-// Opens and returns a system logger. If the user program is running
+// Status returns nil if the given service is running.
+// Will return an error if the service is not running or is not present.
+func (s *SimpleService) Status() error {
+	return ErrNotSupported
+}
+
+// Logger opens and returns a system logger. If the user program is running
 // interactively rather then as a service, the returned logger will write to
 // os.Stderr. If errs is non-nil errors will be sent on errs as well as
 // returned from Logger's functions.

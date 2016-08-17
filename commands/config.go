@@ -1,9 +1,20 @@
 package commands
 
 import (
+	"fmt"
 	"github.com/bssthu/gitlab-ci-multi-runner/common"
+	"github.com/bssthu/gitlab-ci-multi-runner/network"
 	"os"
+	"path/filepath"
 )
+
+func getDefaultConfigFile() string {
+	return filepath.Join(getDefaultConfigDirectory(), "config.toml")
+}
+
+func getDefaultCertificateDirectory() string {
+	return filepath.Join(getDefaultConfigDirectory(), "certs")
+}
 
 type configOptions struct {
 	config *common.Config
@@ -39,9 +50,25 @@ func (c *configOptions) touchConfig() error {
 	return nil
 }
 
+func (c *configOptions) RunnerByName(name string) (*common.RunnerConfig, error) {
+	if c.config == nil {
+		return nil, fmt.Errorf("Config has not been loaded")
+	}
+
+	for _, runner := range c.config.Runners {
+		if runner.Name == name {
+			return runner, nil
+		}
+	}
+
+	return nil, fmt.Errorf("Could not find a runner with the name '%s'", name)
+}
+
 func init() {
 	configFile := os.Getenv("CONFIG_FILE")
 	if configFile == "" {
 		os.Setenv("CONFIG_FILE", getDefaultConfigFile())
 	}
+
+	network.CertificateDirectory = getDefaultCertificateDirectory()
 }

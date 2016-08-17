@@ -10,22 +10,20 @@ import (
 	"github.com/bssthu/gitlab-ci-multi-runner/executors"
 	"github.com/bssthu/gitlab-ci-multi-runner/helpers/ssh"
 
-	prl "github.com/bssthu/gitlab-ci-multi-runner/parallels"
-
-	"github.com/bssthu/gitlab-ci-multi-runner/helpers"
+	prl "github.com/bssthu/gitlab-ci-multi-runner/helpers/parallels"
 )
 
-type ParallelsExecutor struct {
+type executor struct {
 	executors.AbstractExecutor
 	cmd             *exec.Cmd
 	vmName          string
-	sshCommand      ssh.Command
+	sshCommand      ssh.Client
 	provisioned     bool
 	ipAddress       string
 	machineVerified bool
 }
 
-func (s *ParallelsExecutor) waitForIPAddress(vmName string, seconds int) (string, error) {
+func (s *executor) waitForIPAddress(vmName string, seconds int) (string, error) {
 	var lastError error
 
 	if s.ipAddress != "" {
@@ -52,7 +50,7 @@ func (s *ParallelsExecutor) waitForIPAddress(vmName string, seconds int) (string
 	return "", lastError
 }
 
-func (s *ParallelsExecutor) verifyMachine(vmName string) error {
+func (s *executor) verifyMachine(vmName string) error {
 	if s.machineVerified {
 		return nil
 	}
@@ -63,14 +61,13 @@ func (s *ParallelsExecutor) verifyMachine(vmName string) error {
 	}
 
 	// Create SSH command
-	sshCommand := ssh.Command{
+	sshCommand := ssh.Client{
 		Config:         *s.Config.SSH,
-		Command:        "exit 0",
-		Stdout:         s.BuildLog,
-		Stderr:         s.BuildLog,
+		Stdout:         s.BuildTrace,
+		Stderr:         s.BuildTrace,
 		ConnectRetries: 30,
 	}
-	sshCommand.Host = &ipAddr
+	sshCommand.Host = ipAddr
 
 	s.Debugln("Connecting to SSH...")
 	err = sshCommand.Connect()
@@ -78,7 +75,7 @@ func (s *ParallelsExecutor) verifyMachine(vmName string) error {
 		return err
 	}
 	defer sshCommand.Cleanup()
-	err = sshCommand.Run()
+	err = sshCommand.Run(ssh.Command{Command: []string{"exit"}})
 	if err != nil {
 		return err
 	}
@@ -86,7 +83,7 @@ func (s *ParallelsExecutor) verifyMachine(vmName string) error {
 	return nil
 }
 
-func (s *ParallelsExecutor) restoreFromSnapshot() error {
+func (s *executor) restoreFromSnapshot() error {
 	s.Debugln("Requesting default snapshot for VM...")
 	snapshot, err := prl.GetDefaultSnapshot(s.vmName)
 	if err != nil {
@@ -102,13 +99,16 @@ func (s *ParallelsExecutor) restoreFromSnapshot() error {
 	return nil
 }
 
-func (s *ParallelsExecutor) createVM() error {
+func (s *executor) createVM() error {
 	baseImage := s.Config.Parallels.BaseName
 	if baseImage == "" {
 		return errors.New("Missing Image setting from Parallels config")
 	}
 
-	templateName := helpers.StringOrDefault(s.Config.Parallels.TemplateName, baseImage+"-template")
+	templateName := s.Config.Parallels.TemplateName
+	if templateName == "" {
+		templateName = baseImage + "-template"
+	}
 
 	// remove invalid template (removed?)
 	templateStatus, _ := prl.Status(templateName)
@@ -136,6 +136,9 @@ func (s *ParallelsExecutor) createVM() error {
 		return err
 	}
 
+	// TODO: integration tests do fail on this due
+	// Unable to open new session in this virtual machine.
+	// Make sure the latest version of Parallels Tools is installed in this virtual machine and it has finished bootingg
 	s.Debugln("Waiting for VM to start...")
 	err = prl.TryExec(s.vmName, 120, "exit", "0")
 	if err != nil {
@@ -150,13 +153,13 @@ func (s *ParallelsExecutor) createVM() error {
 	return nil
 }
 
-func (s *ParallelsExecutor) Prepare(globalConfig *common.Config, config *common.RunnerConfig, build *common.Build) error {
+func (s *executor) Prepare(globalConfig *common.Config, config *common.RunnerConfig, build *common.Build) error {
 	err := s.AbstractExecutor.Prepare(globalConfig, config, build)
 	if err != nil {
 		return err
 	}
 
-	if s.ShellScript.PassFile {
+	if s.BuildShell.PassFile {
 		return errors.New("Parallels doesn't support shells that require script file")
 	}
 
@@ -185,7 +188,7 @@ func (s *ParallelsExecutor) Prepare(globalConfig *common.Config, config *common.
 		prl.Unregister(s.vmName)
 	}
 
-	if helpers.BoolOrDefault(s.Config.Parallels.DisableSnapshots, false) {
+	if s.Config.Parallels.DisableSnapshots {
 		s.vmName = s.Config.Parallels.BaseName + "-" + s.Build.ProjectUniqueName()
 		if prl.Exist(s.vmName) {
 			s.Debugln("Deleting old VM...")
@@ -218,7 +221,7 @@ func (s *ParallelsExecutor) Prepare(globalConfig *common.Config, config *common.
 			return err
 		}
 
-		if !helpers.BoolOrDefault(s.Config.Parallels.DisableSnapshots, false) {
+		if !s.Config.Parallels.DisableSnapshots {
 			s.Println("Creating default snapshot...")
 			err = prl.CreateSnapshot(s.vmName, "Started")
 			if err != nil {
@@ -258,54 +261,56 @@ func (s *ParallelsExecutor) Prepare(globalConfig *common.Config, config *common.
 
 	s.provisioned = true
 
+	// TODO: integration tests do fail on this due
+	// Unable to open new session in this virtual machine.
+	// Make sure the latest version of Parallels Tools is installed in this virtual machine and it has finished booting
 	s.Debugln("Updating VM date...")
 	err = prl.TryExec(s.vmName, 20, "sudo", "ntpdate", "-u", "time.apple.com")
 	if err != nil {
 		return err
 	}
-	return nil
-}
 
-func (s *ParallelsExecutor) Start() error {
 	ipAddr, err := s.waitForIPAddress(s.vmName, 60)
 	if err != nil {
 		return err
 	}
 
 	s.Debugln("Starting SSH command...")
-	s.sshCommand = ssh.Command{
-		Config:      *s.Config.SSH,
-		Environment: s.ShellScript.Environment,
-		Command:     s.ShellScript.GetFullCommand(),
-		Stdin:       s.ShellScript.GetScriptBytes(),
-		Stdout:      s.BuildLog,
-		Stderr:      s.BuildLog,
+	s.sshCommand = ssh.Client{
+		Config: *s.Config.SSH,
+		Stdout: s.BuildTrace,
+		Stderr: s.BuildTrace,
 	}
-	s.sshCommand.Host = &ipAddr
+	s.sshCommand.Host = ipAddr
 
 	s.Debugln("Connecting to SSH server...")
 	err = s.sshCommand.Connect()
 	if err != nil {
 		return err
 	}
-
-	// Wait for process to exit
-	go func() {
-		s.Debugln("Will run SSH command...")
-		err := s.sshCommand.Run()
-		s.Debugln("SSH command finished with", err)
-		s.BuildFinish <- err
-	}()
 	return nil
 }
 
-func (s *ParallelsExecutor) Cleanup() {
+func (s *executor) Run(cmd common.ExecutorCommand) error {
+	err := s.sshCommand.Run(ssh.Command{
+		Environment: s.BuildShell.Environment,
+		Command:     s.BuildShell.GetCommandWithArguments(),
+		Stdin:       cmd.Script,
+		Abort:       cmd.Abort,
+	})
+	if _, ok := err.(*ssh.ExitError); ok {
+		err = &common.BuildError{Inner: err}
+	}
+	return err
+}
+
+func (s *executor) Cleanup() {
 	s.sshCommand.Cleanup()
 
 	if s.vmName != "" {
 		prl.Kill(s.vmName)
 
-		if helpers.BoolOrDefault(s.Config.Parallels.DisableSnapshots, false) || !s.provisioned {
+		if s.Config.Parallels.DisableSnapshots || !s.provisioned {
 			prl.Delete(s.vmName)
 		}
 	}
@@ -318,24 +323,27 @@ func init() {
 		DefaultBuildsDir: "builds",
 		SharedBuildsDir:  false,
 		Shell: common.ShellScriptInfo{
-			Shell: "bash",
-			Type:  common.LoginShell,
+			Shell:         "bash",
+			Type:          common.LoginShell,
+			RunnerCommand: "gitlab-runner",
 		},
 		ShowHostname: true,
 	}
 
-	create := func() common.Executor {
-		return &ParallelsExecutor{
+	creator := func() common.Executor {
+		return &executor{
 			AbstractExecutor: executors.AbstractExecutor{
 				ExecutorOptions: options,
 			},
 		}
 	}
 
-	common.RegisterExecutor("parallels", common.ExecutorFactory{
-		Create: create,
-		Features: common.FeaturesInfo{
-			Variables: true,
-		},
+	featuresUpdater := func(features *common.FeaturesInfo) {
+		features.Variables = true
+	}
+
+	common.RegisterExecutor("parallels", executors.DefaultExecutorProvider{
+		Creator:         creator,
+		FeaturesUpdater: featuresUpdater,
 	})
 }

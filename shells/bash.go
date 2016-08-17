@@ -7,216 +7,218 @@ import (
 	"github.com/bssthu/gitlab-ci-multi-runner/common"
 	"github.com/bssthu/gitlab-ci-multi-runner/helpers"
 	"io"
-	"path/filepath"
+	"path"
 	"runtime"
+	"strconv"
 	"strings"
-	"text/template"
 )
+
+const bashDetectShell = `if [ -x /usr/local/bin/bash ]; then
+	exec /usr/local/bin/bash $@
+elif [ -x /usr/bin/bash ]; then
+	exec /usr/bin/bash $@
+elif [ -x /bin/bash ]; then
+	exec /bin/bash $@
+elif [ -x /usr/local/bin/sh ]; then
+	exec /usr/local/bin/sh $@
+elif [ -x /usr/bin/sh ]; then
+	exec /usr/bin/sh $@
+elif [ -x /bin/sh ]; then
+	exec /bin/sh $@
+else
+	echo shell not found
+	exit 1
+fi
+
+`
 
 type BashShell struct {
 	AbstractShell
+	Shell string
+}
+
+type BashWriter struct {
+	bytes.Buffer
+	TemporaryPath string
+	indent        int
+}
+
+func (b *BashWriter) Line(text string) {
+	b.WriteString(strings.Repeat("  ", b.indent) + text + "\n")
+}
+
+func (b *BashWriter) CheckForErrors() {
+}
+
+func (b *BashWriter) Indent() {
+	b.indent++
+}
+
+func (b *BashWriter) Unindent() {
+	b.indent--
+}
+
+func (b *BashWriter) Command(command string, arguments ...string) {
+	list := []string{
+		helpers.ShellEscape(command),
+	}
+
+	for _, argument := range arguments {
+		list = append(list, strconv.Quote(argument))
+	}
+
+	b.Line(strings.Join(list, " "))
+}
+
+func (b *BashWriter) Variable(variable common.BuildVariable) {
+	if variable.File {
+		variableFile := b.Absolute(path.Join(b.TemporaryPath, variable.Key))
+		b.Line(fmt.Sprintf("mkdir -p %q", helpers.ToSlash(b.TemporaryPath)))
+		b.Line(fmt.Sprintf("echo -n %s > %q", helpers.ShellEscape(variable.Value), variableFile))
+		b.Line(fmt.Sprintf("export %s=%q", helpers.ShellEscape(variable.Key), variableFile))
+	} else {
+		b.Line(fmt.Sprintf("export %s=%s", helpers.ShellEscape(variable.Key), helpers.ShellEscape(variable.Value)))
+	}
+}
+
+func (b *BashWriter) IfDirectory(path string) {
+	b.Line(fmt.Sprintf("if [[ -d %q ]]; then", path))
+	b.Indent()
+}
+
+func (b *BashWriter) IfFile(path string) {
+	b.Line(fmt.Sprintf("if [[ -e %q ]]; then", path))
+	b.Indent()
+}
+
+func (b *BashWriter) IfCmd(cmd string, arguments ...string) {
+	b.Line(fmt.Sprintf("if %q %s >/dev/null 2>/dev/null; then", cmd, strings.Join(arguments, " ")))
+	b.Indent()
+}
+
+func (b *BashWriter) Else() {
+	b.Unindent()
+	b.Line("else")
+	b.Indent()
+}
+
+func (b *BashWriter) EndIf() {
+	b.Unindent()
+	b.Line("fi")
+}
+
+func (b *BashWriter) Cd(path string) {
+	b.Command("cd", path)
+}
+
+func (b *BashWriter) RmDir(path string) {
+	b.Command("rm", "-r", "-f", path)
+}
+
+func (b *BashWriter) RmFile(path string) {
+	b.Command("rm", "-f", path)
+}
+
+func (b *BashWriter) Absolute(dir string) string {
+	if path.IsAbs(dir) {
+		return dir
+	}
+	return path.Join("$PWD", dir)
+}
+
+func (b *BashWriter) Print(format string, arguments ...interface{}) {
+	coloredText := helpers.ANSI_RESET + fmt.Sprintf(format, arguments...)
+	b.Line("echo " + helpers.ShellEscape(coloredText))
+}
+
+func (b *BashWriter) Notice(format string, arguments ...interface{}) {
+	coloredText := helpers.ANSI_BOLD_GREEN + fmt.Sprintf(format, arguments...) + helpers.ANSI_RESET
+	b.Line("echo " + helpers.ShellEscape(coloredText))
+}
+
+func (b *BashWriter) Warning(format string, arguments ...interface{}) {
+	coloredText := helpers.ANSI_YELLOW + fmt.Sprintf(format, arguments...) + helpers.ANSI_RESET
+	b.Line("echo " + helpers.ShellEscape(coloredText))
+}
+
+func (b *BashWriter) Error(format string, arguments ...interface{}) {
+	coloredText := helpers.ANSI_BOLD_RED + fmt.Sprintf(format, arguments...) + helpers.ANSI_RESET
+	b.Line("echo " + helpers.ShellEscape(coloredText))
+}
+
+func (b *BashWriter) EmptyLine() {
+	b.Line("echo")
+}
+
+func (b *BashWriter) Finish() string {
+	var buffer bytes.Buffer
+	w := bufio.NewWriter(&buffer)
+	io.WriteString(w, "set -eo pipefail\n")
+	io.WriteString(w, "set +o noclobber\n")
+	io.WriteString(w, ": | eval "+helpers.ShellEscape(b.String())+"\n")
+	w.Flush()
+	return buffer.String()
 }
 
 func (b *BashShell) GetName() string {
-	return "bash"
+	return b.Shell
 }
 
-func (b *BashShell) echoColored(w io.Writer, text string) {
-	coloredText := helpers.ANSI_BOLD_GREEN + text + helpers.ANSI_RESET
-	io.WriteString(w, "echo " + helpers.ShellEscape(coloredText) + "\n")
-}
-
-func (b *BashShell) echoColoredFormat(w io.Writer, format string, a ...interface{}) {
-	b.echoColored(w, fmt.Sprintf(format, a...))
-}
-
-func (b *BashShell) installGit(w io.Writer) error {
-	installGitTmpl := `
-function installGit() {
-	PREFIX=
-	if [[ $(id -u) -ne 0 ]]; then
-		if which sudo >/dev/null 2>/dev/null; then
-			PREFIX="sudo "
-		elif [[ -x /usr/bin/sudo ]]; then
-			PREFIX="/usr/bin/sudo "
-		else
-			echo "{{.ANSI_YELLOW}}WARNING: Cannot install git: missing sudo.{{.ANSI_RESET}}"
-			return 1
-		fi
-	fi
-
-	UPDATE_CMD=
-	INSTALL_CMD=
-
-	echo "Installing git..."
-	if which apt-get >/dev/null 2>/dev/null; then # Debian/Ubuntu support
-		UPDATE_CMD="apt-get update -y -q"
-		INSTALL_CMD="apt-get install -y git-core ca-certificates"
-	elif [[ -x /usr/bin/apt-get ]]; then
-		UPDATE_CMD="/usr/bin/apt-get update -y -q"
-		INSTALL_CMD="/usr/bin/apt-get install -y git-core ca-certificates"
-	elif which yum >/dev/null 2>/dev/null; then # RedHat/CentOS support
-		INSTALL_CMD="yum install -y git"
-	elif [[ -x /usr/bin/yum ]]; then # RedHat/CentOS support
-		INSTALL_CMD="/usr/bin/yum install -y git"
-	else
-		echo "{{.ANSI_YELLOW}}WARNING: Cannot install git: unsupported OS.{{.ANSI_RESET}}"
-		return 1
-	fi
-
-	if [[ -n "$UPDATE_CMD" ]]; then
-		echo "{{.ANSI_GREEN}$$ $PREFIX$UPDATE_CMD{{.ANSI_RESET}}"
-		$PREFIX $UPDATE_CMD || true
-	fi
-
-	if [[ -n "$INSTALL_CMD" ]]; then
-		echo "{{.ANSI_GREEN}$$ $PREFIX$INSTALL_CMD{{.ANSI_RESET}}"
-		if ! $PREFIX $INSTALL_CMD; then
-			echo "{{.ANSI_YELLOW}}WARNING: Cannot install git: the build may fail.{{.ANSI_RESET}}"
-			return 1
-		fi
-	fi
-}
-
-if ! which git >/dev/null 2>/dev/null && ! [[ -x /usr/bin/git ]]; then
-	installGit || true
-fi
-`
-	template, err := template.New("").Parse(installGitTmpl)
-	if err != nil {
-		return err
-	}
-
-	var to = &struct {
-		ANSI_GREEN string
-		ANSI_YELLOW string
-		ANSI_RESET string
-	}{
-		helpers.ANSI_BOLD_GREEN,
-		helpers.ANSI_BOLD_YELLOW,
-		helpers.ANSI_RESET,
-	}
-
-	err = template.Execute(w, to)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func (b *BashShell) writeCloneCmd(w io.Writer, build *common.Build, projectDir string) {
-	b.echoColoredFormat(w, "Cloning repository...")
-	io.WriteString(w, fmt.Sprintf("rm -rf %s\n", projectDir))
-	io.WriteString(w, fmt.Sprintf("mkdir -p %s\n", projectDir))
-	io.WriteString(w, fmt.Sprintf("git clone %s %s\n", helpers.ShellEscape(build.RepoURL), projectDir))
-	io.WriteString(w, fmt.Sprintf("cd %s\n", projectDir))
-}
-
-func (b *BashShell) writeFetchCmd(w io.Writer, build *common.Build, projectDir string, gitDir string) {
-	io.WriteString(w, fmt.Sprintf("if [[ -d %s ]]; then\n", gitDir))
-	b.echoColoredFormat(w, "Fetching changes...")
-	io.WriteString(w, fmt.Sprintf("cd %s\n", projectDir))
-	io.WriteString(w, fmt.Sprintf("git clean -ffdx\n"))
-	io.WriteString(w, fmt.Sprintf("git reset --hard > /dev/null\n"))
-	io.WriteString(w, fmt.Sprintf("git remote set-url origin %s\n", helpers.ShellEscape(build.RepoURL)))
-	io.WriteString(w, fmt.Sprintf("git fetch origin --tags -p\n"))
-	io.WriteString(w, fmt.Sprintf("else\n"))
-	b.writeCloneCmd(w, build, projectDir)
-	io.WriteString(w, fmt.Sprintf("fi\n"))
-}
-
-func (b *BashShell) writeCheckoutCmd(w io.Writer, build *common.Build) {
-	b.echoColoredFormat(w, "Checking out %s as %s...", build.Sha[0:8], build.RefName)
-	io.WriteString(w, fmt.Sprintf("git checkout -qf %s\n", build.Sha))
-}
-
-func (b *BashShell) GenerateScript(info common.ShellScriptInfo) (*common.ShellScript, error) {
-	var buffer bytes.Buffer
-	w := bufio.NewWriter(&buffer)
-
-	build := info.Build
-	projectDir := build.FullProjectDir()
-	projectDir = helpers.ToSlash(projectDir)
-	gitDir := filepath.Join(projectDir, ".git")
-
-	if len(build.Hostname) != 0 {
-		io.WriteString(w, fmt.Sprintf("echo Running on $(hostname) via %s...", helpers.ShellEscape(build.Hostname)))
+func (b *BashShell) GetConfiguration(info common.ShellScriptInfo) (script *common.ShellConfiguration, err error) {
+	var detectScript string
+	var shellCommand string
+	if info.Type == common.LoginShell {
+		detectScript = strings.Replace(bashDetectShell, "$@", "--login", -1)
+		shellCommand = b.Shell + " --login"
 	} else {
-		io.WriteString(w, "echo Running on $(hostname)...\n")
-	}
-	io.WriteString(w, "\n")
-	io.WriteString(w, "echo\n")
-	io.WriteString(w, "\n")
-
-	// Set env variables from build script
-	for _, keyValue := range b.GetVariables(build, projectDir, info.Environment) {
-		io.WriteString(w, "export " + helpers.ShellEscape(keyValue) + "\n")
-	}
-	io.WriteString(w, "\n")
-	b.installGit(w)
-	io.WriteString(w, "\n")
-	io.WriteString(w, "set -eo pipefail\n")
-	io.WriteString(w, "\n")
-
-	if build.AllowGitFetch {
-		b.writeFetchCmd(w, build, helpers.ShellEscape(projectDir), helpers.ShellEscape(gitDir))
-	} else {
-		b.writeCloneCmd(w, build, helpers.ShellEscape(projectDir))
+		detectScript = strings.Replace(bashDetectShell, "$@", "", -1)
+		shellCommand = b.Shell
 	}
 
-	b.writeCheckoutCmd(w, build)
-	io.WriteString(w, "\n")
-	io.WriteString(w, "echo\n")
-	io.WriteString(w, "\n")
-
-	commands := build.Commands
-	commands = strings.TrimSpace(commands)
-	for _, command := range strings.Split(commands, "\n") {
-		command = strings.TrimSpace(command)
-		if !helpers.BoolOrDefault(build.Runner.DisableVerbose, false) {
-			if command != "" {
-				b.echoColored(w, "$ " + command)
-			} else {
-				io.WriteString(w, "echo\n")
-			}
-		}
-		io.WriteString(w, command+"\n")
-	}
-
-	io.WriteString(w, "\n")
-
-	w.Flush()
-
-	// evaluate script in subcontext, this is required to close stdin
-	scriptCommand := "#!/usr/bin/env bash\n: | eval " + helpers.ShellEscape(buffer.String())
-
-	script := common.ShellScript{
-		Script:      scriptCommand,
-		Environment: b.GetVariables(build, projectDir, info.Environment),
-	}
+	script = &common.ShellConfiguration{}
+	script.DockerCommand = []string{"sh", "-c", detectScript}
 
 	// su
-	if info.User != nil {
+	if info.User != "" {
 		script.Command = "su"
-		if info.Type == common.LoginShell {
-			script.Arguments = []string{"--shell", "/bin/bash", "--login", *info.User}
-		} else {
-			script.Arguments = []string{"--shell", "/bin/bash", *info.User}
+		if runtime.GOOS == "linux" {
+			script.Arguments = append(script.Arguments, "-s", "/bin/"+b.Shell)
 		}
+		script.Arguments = append(script.Arguments, info.User)
+		script.Arguments = append(script.Arguments, "-c", shellCommand)
 	} else {
-		script.Command = "bash"
+		script.Command = b.Shell
 		if info.Type == common.LoginShell {
-			script.Arguments = []string{"--login"}
+			script.Arguments = append(script.Arguments, "--login")
 		}
 	}
 
-	return &script, nil
+	return
+}
+
+func (b *BashShell) GenerateScript(scriptType common.ShellScriptType, info common.ShellScriptInfo) (script string, err error) {
+	w := &BashWriter{
+		TemporaryPath: info.Build.FullProjectDir() + ".tmp",
+	}
+
+	if scriptType == common.ShellPrepareScript {
+		if len(info.Build.Hostname) != 0 {
+			w.Line("echo " + strconv.Quote("Running on $(hostname) via "+info.Build.Hostname+"..."))
+		} else {
+			w.Line("echo " + strconv.Quote("Running on $(hostname)..."))
+		}
+	}
+
+	err = b.writeScript(w, scriptType, info)
+	script = w.Finish()
+	return
 }
 
 func (b *BashShell) IsDefault() bool {
-	return runtime.GOOS != "windows"
+	return runtime.GOOS != "windows" && b.Shell == "bash"
 }
 
 func init() {
-	common.RegisterShell(&BashShell{})
+	common.RegisterShell(&BashShell{Shell: "sh"})
+	common.RegisterShell(&BashShell{Shell: "bash"})
 }

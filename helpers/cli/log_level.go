@@ -35,12 +35,12 @@ func SetupLogLevelOptions(app *cli.App) {
 		// enforce log-level=debug.
 		if !c.IsSet("log-level") && !c.IsSet("l") && c.Bool("debug") {
 			log.SetLevel(log.DebugLevel)
+			go watchForGoroutinesDump()
 		}
 
 		if appBefore != nil {
 			return appBefore(c)
-		} else {
-			return nil
 		}
+		return nil
 	}
 }

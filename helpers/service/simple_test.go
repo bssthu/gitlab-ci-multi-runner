@@ -1,14 +1,14 @@
 package service_helpers
 
 import (
-	"testing"
-	"github.com/golang/mock/gomock"
-	"github.com/bssthu/gitlab-ci-multi-runner/mocks"
 	"errors"
+	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
+	"github.com/bssthu/gitlab-ci-multi-runner/mocks"
+	"testing"
 )
 
-var ExampleError = errors.New("example error")
+var errExample = errors.New("example error")
 
 func TestStart(t *testing.T) {
 	ctrl := gomock.NewController(t)
@@ -17,9 +17,9 @@ func TestStart(t *testing.T) {
 	mi := &mocks.Interface{}
 	s := &SimpleService{i: mi}
 
-	mi.On("Start", s).Return(ExampleError)
+	mi.On("Start", s).Return(errExample)
 
 	err := s.Run()
-	assert.Equal(t, err, ExampleError)
+	assert.Equal(t, err, errExample)
 	mi.AssertExpectations(t)
 }

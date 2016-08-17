@@ -8,59 +8,82 @@ import (
 	"github.com/bssthu/gitlab-ci-multi-runner/helpers/ssh"
 )
 
-type DockerSSHExecutor struct {
-	DockerExecutor
-	sshCommand ssh.Command
+type sshExecutor struct {
+	executor
+	sshCommand ssh.Client
 }
 
-func (s *DockerSSHExecutor) Start() error {
+func (s *sshExecutor) Prepare(globalConfig *common.Config, config *common.RunnerConfig, build *common.Build) error {
+	err := s.executor.Prepare(globalConfig, config, build)
+	if err != nil {
+		return err
+	}
+
 	if s.Config.SSH == nil {
 		return errors.New("Missing SSH configuration")
 	}
 
 	s.Debugln("Starting SSH command...")
 
-	// Create container
-	err := s.createBuildContainer([]string{})
+	imageName, err := s.getImageName()
 	if err != nil {
 		return err
 	}
 
-	containerData, err := s.client.InspectContainer(s.buildContainer.ID)
+	options, err := s.prepareBuildContainer()
+	if err != nil {
+		return err
+	}
+
+	// Start build container which will run actual build
+	container, err := s.createContainer("build", imageName, []string{}, *options)
+	if err != nil {
+		return err
+	}
+
+	s.Debugln("Starting container", container.ID, "...")
+	err = s.client.StartContainer(container.ID, nil)
+	if err != nil {
+		return err
+	}
+
+	containerData, err := s.client.InspectContainer(container.ID)
 	if err != nil {
 		return err
 	}
 
 	// Create SSH command
-	s.sshCommand = ssh.Command{
-		Config:      *s.Config.SSH,
-		Environment: s.ShellScript.Environment,
-		Command:     s.ShellScript.GetFullCommand(),
-		Stdin:       s.ShellScript.GetScriptBytes(),
-		Stdout:      s.BuildLog,
-		Stderr:      s.BuildLog,
+	s.sshCommand = ssh.Client{
+		Config: *s.Config.SSH,
+		Stdout: s.BuildTrace,
+		Stderr: s.BuildTrace,
 	}
-	s.sshCommand.Host = &containerData.NetworkSettings.IPAddress
+	s.sshCommand.Host = containerData.NetworkSettings.IPAddress
 
 	s.Debugln("Connecting to SSH server...")
 	err = s.sshCommand.Connect()
 	if err != nil {
 		return err
 	}
-
-	// Wait for process to exit
-	go func() {
-		s.Debugln("Will run SSH command...")
-		err := s.sshCommand.Run()
-		s.Debugln("SSH command finished with", err)
-		s.BuildFinish <- err
-	}()
 	return nil
 }
 
-func (s *DockerSSHExecutor) Cleanup() {
+func (s *sshExecutor) Run(cmd common.ExecutorCommand) error {
+	err := s.sshCommand.Run(ssh.Command{
+		Environment: s.BuildShell.Environment,
+		Command:     s.BuildShell.GetCommandWithArguments(),
+		Stdin:       cmd.Script,
+		Abort:       cmd.Abort,
+	})
+	if _, ok := err.(*ssh.ExitError); ok {
+		err = &common.BuildError{Inner: err}
+	}
+	return err
+}
+
+func (s *sshExecutor) Cleanup() {
 	s.sshCommand.Cleanup()
-	s.DockerExecutor.Cleanup()
+	s.executor.Cleanup()
 }
 
 func init() {
@@ -68,16 +91,17 @@ func init() {
 		DefaultBuildsDir: "builds",
 		SharedBuildsDir:  false,
 		Shell: common.ShellScriptInfo{
-			Shell: "bash",
-			Type:  common.LoginShell,
+			Shell:         "bash",
+			Type:          common.LoginShell,
+			RunnerCommand: "gitlab-runner",
 		},
 		ShowHostname:     true,
 		SupportedOptions: []string{"image", "services"},
 	}
 
-	create := func() common.Executor {
-		return &DockerSSHExecutor{
-			DockerExecutor: DockerExecutor{
+	creator := func() common.Executor {
+		return &sshExecutor{
+			executor: executor{
 				AbstractExecutor: executors.AbstractExecutor{
 					ExecutorOptions: options,
 				},
@@ -85,12 +109,14 @@ func init() {
 		}
 	}
 
-	common.RegisterExecutor("docker-ssh", common.ExecutorFactory{
-		Create: create,
-		Features: common.FeaturesInfo{
-			Variables: true,
-			Image:     true,
-			Services:  true,
-		},
+	featuresUpdater := func(features *common.FeaturesInfo) {
+		features.Variables = true
+		features.Image = true
+		features.Services = true
+	}
+
+	common.RegisterExecutor("docker-ssh", executors.DefaultExecutorProvider{
+		Creator:         creator,
+		FeaturesUpdater: featuresUpdater,
 	})
 }

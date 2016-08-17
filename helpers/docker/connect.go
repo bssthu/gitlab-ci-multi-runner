@@ -1,24 +1,57 @@
 package docker_helpers
 
 import (
-	"github.com/fsouza/go-dockerclient"
-	"github.com/bssthu/gitlab-ci-multi-runner/helpers"
+	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
+	"time"
+
+	"github.com/Sirupsen/logrus"
+	"github.com/fsouza/go-dockerclient"
 )
 
-func Connect(c DockerCredentials, apiVersion string) (*docker.Client, error) {
+var dockerDialer = &net.Dialer{
+	Timeout:   30 * time.Second,
+	KeepAlive: 30 * time.Second,
+}
+
+func httpTransportFix(host string, client Client) {
+	dockerClient, ok := client.(*docker.Client)
+	if !ok || dockerClient == nil {
+		return
+	}
+
+	logrus.WithField("host", host).Debugln("Applying docker.Client transport fix:", dockerClient)
+	dockerClient.Dialer = dockerDialer
+	dockerClient.HTTPClient = &http.Client{
+		Transport: &http.Transport{
+			Proxy:               http.ProxyFromEnvironment,
+			Dial:                dockerDialer.Dial,
+			TLSHandshakeTimeout: 10 * time.Second,
+			TLSClientConfig:     dockerClient.TLSConfig,
+		},
+	}
+}
+
+func New(c DockerCredentials, apiVersion string) (client Client, err error) {
 	endpoint := "unix:///var/run/docker.sock"
 	tlsVerify := false
 	tlsCertPath := ""
 
-	if host := helpers.StringOrDefault(c.Host, ""); host != "" {
+	defer func() {
+		if client != nil {
+			httpTransportFix(endpoint, client)
+		}
+	}()
+
+	if c.Host != "" {
 		// read docker config from config
-		endpoint = host
-		if c.CertPath != nil {
+		endpoint = c.Host
+		if c.CertPath != "" {
 			tlsVerify = true
-			tlsCertPath = *c.CertPath
+			tlsCertPath = c.CertPath
 		}
 	} else if host := os.Getenv("DOCKER_HOST"); host != "" {
 		// read docker config from environment
@@ -28,7 +61,7 @@ func Connect(c DockerCredentials, apiVersion string) (*docker.Client, error) {
 	}
 
 	if tlsVerify {
-		client, err := docker.NewVersionnedTLSClient(
+		client, err = docker.NewVersionedTLSClient(
 			endpoint,
 			filepath.Join(tlsCertPath, "cert.pem"),
 			filepath.Join(tlsCertPath, "key.pem"),
@@ -36,16 +69,29 @@ func Connect(c DockerCredentials, apiVersion string) (*docker.Client, error) {
 			apiVersion,
 		)
 		if err != nil {
-			return nil, err
+			logrus.Errorln("Error while TLS Docker client creation:", err)
 		}
 
-		return client, nil
-	} else {
-		client, err := docker.NewVersionedClient(endpoint, apiVersion)
-		if err != nil {
-			return nil, err
-		}
+		return
+	}
 
-		return client, nil
+	client, err = docker.NewVersionedClient(endpoint, apiVersion)
+	if err != nil {
+		logrus.Errorln("Error while Docker client creation:", err)
+	}
+	return
+}
+
+func Close(client Client) {
+	dockerClient, ok := client.(*docker.Client)
+	if !ok {
+		return
+	}
+
+	// Nuke all connections
+	if transport, ok := dockerClient.HTTPClient.Transport.(*http.Transport); ok && transport != http.DefaultTransport {
+		transport.DisableKeepAlives = true
+		transport.CloseIdleConnections()
+		logrus.Debugln("Closed all idle connections for docker.Client:", dockerClient)
 	}
 }

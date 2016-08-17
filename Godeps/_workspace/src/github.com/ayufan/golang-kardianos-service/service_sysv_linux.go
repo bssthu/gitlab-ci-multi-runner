@@ -1,6 +1,6 @@
 // Copyright 2015 Daniel Theophanes.
 // Use of this source code is governed by a zlib-style
-// license that can be found in the LICENSE file.package service
+// license that can be found in the LICENSE file.
 
 package service
 
@@ -157,11 +157,11 @@ func (s *sysv) Run() (err error) {
 		return err
 	}
 
-	sigChan := make(chan os.Signal, 3)
-
-	signal.Notify(sigChan, syscall.SIGTERM, os.Interrupt)
-
-	<-sigChan
+	s.Option.funcSingle(optionRunWait, func() {
+		var sigChan = make(chan os.Signal, 3)
+		signal.Notify(sigChan, syscall.SIGTERM, os.Interrupt)
+		<-sigChan
+	})()
 
 	return s.i.Stop(s)
 }
@@ -172,6 +172,10 @@ func (s *sysv) Start() error {
 
 func (s *sysv) Stop() error {
 	return run("service", s.Name, "stop")
+}
+
+func (s *sysv) Status() error {
+	return checkStatus("service", []string{s.Name, "status"}, "is running", "unrecognized service")
 }
 
 func (s *sysv) Restart() error {
